@@ -7,12 +7,13 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import svoboda.runet.abonent0007.data.Prefs
@@ -30,11 +31,6 @@ data class ConnectionIntent(
     var sessionId: Long = 0L,
 )
 
-/**
- * Координатор автоматического восстановления VPN.
- * Разделяет намерение пользователя и фактическое состояние туннеля,
- * реализует backoff, обработку смены сети и защиту от гонок.
- */
 class ReconnectCoordinator(
     private val context: Context,
     private val controller: VpnController,
@@ -45,10 +41,15 @@ class ReconnectCoordinator(
     private val disconnectAction: () -> Unit,
 ) {
     private val mutex = Mutex()
+    private val intent = ConnectionIntent()
     private val _state = MutableStateFlow(ReconnectState.IDLE)
     val state: StateFlow<ReconnectState> = _state.asStateFlow()
 
-    private val intent = ConnectionIntent()
+    @Volatile
+    var testingMode: Boolean = false
+
+    val shouldBeConnected: Boolean get() = intent.shouldBeConnected
+
     private var failureCount = 0
     private var healthJob: Job? = null
     private var reconnectJob: Job? = null
@@ -56,6 +57,13 @@ class ReconnectCoordinator(
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     private val backoffBase = listOf(2L, 5, 10, 20, 40, 60)
+
+    suspend fun <T> withVpnLock(block: suspend () -> T): T = mutex.withLock { block() }
+
+    fun cancelHealth() {
+        healthJob?.cancel()
+        healthJob = null
+    }
 
     fun startNetworkMonitoring() {
         val request = NetworkRequest.Builder()
@@ -114,12 +122,10 @@ class ReconnectCoordinator(
             !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
-    private suspend fun checkTunnel(): Boolean {
-        return try {
-            if (controller.lastHandshake() <= 0) return false
+    private fun checkTunnel(): Boolean {
+        return runBlocking {
+            if (controller.lastHandshake() <= 0) return@runBlocking false
             NetProbe.fetchExit() != null
-        } catch (e: Exception) {
-            false
         }
     }
 
@@ -128,7 +134,7 @@ class ReconnectCoordinator(
         intent.shouldBeConnected = true
         val currentSession = intent.sessionId
         cancelReconnect()
-        healthJob?.cancel()
+        cancelHealth()
         _state.value = ReconnectState.CONNECTING
         val ok = if (manual) manualConnect() else autoConnect()
         if (intent.sessionId != currentSession) return@withLock
@@ -146,15 +152,15 @@ class ReconnectCoordinator(
         intent.sessionId++
         intent.shouldBeConnected = false
         cancelReconnect()
-        healthJob?.cancel()
+        cancelHealth()
         disconnectAction()
         _state.value = ReconnectState.IDLE
         controller.setStatus(null)
     }
 
-    private fun scheduleReconnect(currentSession: Long) {
+    private suspend fun scheduleReconnect(currentSession: Long) {
         if (!intent.shouldBeConnected || intent.sessionId != currentSession) return
-        reconnectJob?.cancel()
+        cancelReconnect()
         val baseDelay = if (failureCount >= backoffBase.size) 300L else backoffBase[failureCount.coerceAtMost(backoffBase.lastIndex)]
         failureCount = (failureCount + 1).coerceAtMost(backoffBase.size)
         val jitter = (baseDelay * 0.2 * (Random.nextDouble() * 2 - 1)).toLong()
@@ -186,10 +192,10 @@ class ReconnectCoordinator(
     }
 
     private fun startHealth(currentSession: Long) {
-        healthJob?.cancel()
+        cancelHealth()
         healthJob = scope.launch {
             var consecutiveFailures = 0
-            while (coroutineContext.isActive && intent.shouldBeConnected && intent.sessionId == currentSession) {
+            while (intent.shouldBeConnected && intent.sessionId == currentSession) {
                 delay(30000)
                 if (!intent.shouldBeConnected || intent.sessionId != currentSession) break
                 val healthy = checkTunnel()
