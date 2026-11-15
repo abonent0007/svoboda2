@@ -27,6 +27,16 @@ class Prefs(context: Context) {
         get() = prefs.getInt("tunnel_mtu", 1240).coerceIn(1_200, 1_420)
         set(value) = prefs.edit().putInt("tunnel_mtu", value.coerceIn(1_200, 1_420)).apply()
 
+    /** Включить IPv6 через туннель (по умолчанию выкл). */
+    var ipv6Enabled: Boolean
+        get() = prefs.getBoolean("ipv6_enabled", false)
+        set(value) = prefs.edit().putBoolean("ipv6_enabled", value).apply()
+
+    /** DNS-серверы через запятую; пусто — оставить из конфига. */
+    var dnsServers: String
+        get() = prefs.getString("dns_servers", "").orEmpty()
+        set(value) = prefs.edit().putString("dns_servers", value.trim()).apply()
+
     /** Последний удачный конфиг — для автопереподключения (хранится зашифрованным). */
     var lastGoodConfig: String
         get() {

@@ -112,7 +112,12 @@ class VpnController(
         _pingHistory.value = emptyList()
         _lastPing.value = null
         runCatching {
-            val normalized = ConfigNormalizer.normalize(configText, mtuOverride = prefs.tunnelMtu)
+            val normalized = ConfigNormalizer.normalize(
+                configText,
+                ipv6Enabled = prefs.ipv6Enabled,
+                mtuOverride = prefs.tunnelMtu,
+                dnsOverride = prefs.dnsServers.ifBlank { null },
+            )
             val config = Config.parse(
                 BufferedReader(
                     StringReader(applySplitTunnel(normalized)),

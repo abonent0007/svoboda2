@@ -16,11 +16,16 @@ object ConfigNormalizer {
     private val dnsLine = Regex("(?m)^\\s*DNS\\s*=\\s*(.+)\\s*$")
     private val mtuLine = Regex("(?m)^\\s*MTU\\s*=\\s*\\d+\\s*$")
 
-    fun normalize(text: String, ipv6Enabled: Boolean = false, mtuOverride: Int? = null): String {
+    fun normalize(text: String, ipv6Enabled: Boolean = false, mtuOverride: Int? = null, dnsOverride: String? = null): String {
         val withMtu = text.lines().joinToString("\n") { line ->
             if (mtuOverride == null || !mtuLine.matches(line)) line else "MTU = $mtuOverride"
         }
-        val normalizedAddresses = withMtu.lines().joinToString("\n") { line ->
+        val withDns = if (dnsOverride.isNullOrBlank()) withMtu else {
+            withMtu.lines().joinToString("\n") { line ->
+                if (dnsLine.matches(line)) "DNS = $dnsOverride" else line
+            }
+        }
+        val normalizedAddresses = withDns.lines().joinToString("\n") { line ->
             val match = addressLine.matchEntire(line)
             if (match == null) {
                 line

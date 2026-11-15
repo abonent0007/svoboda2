@@ -29,9 +29,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
@@ -109,6 +112,10 @@ fun HomeScreen(
     var autoConnect by remember { mutableStateOf(prefs.autoConnect) }
     var mtu by remember { mutableStateOf(prefs.tunnelMtu) }
 
+    var ipv6Enabled by remember { mutableStateOf(prefs.ipv6Enabled) }
+    var dnsText by remember { mutableStateOf(prefs.dnsServers) }
+    var showDnsDialog by remember { mutableStateOf(false) }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -118,6 +125,8 @@ fun HomeScreen(
                 intervalSec = intervalSec,
                 autoConnect = autoConnect,
                 mtu = mtu,
+                ipv6Enabled = ipv6Enabled,
+                dnsText = dnsText,
                 splitEnabled = splitEnabled,
                 excludedCount = excludedCount,
                 serverTitle = serverTitle,
@@ -137,6 +146,11 @@ fun HomeScreen(
                     mtu = it
                     prefs.tunnelMtu = it
                 },
+                onIpv6Toggle = { v ->
+                    ipv6Enabled = v
+                    prefs.ipv6Enabled = v
+                },
+                onDnsClick = { showDnsDialog = true },
                 onSplitToggle = onSplitToggle,
                 onPickApps = onPickApps,
                 onOpenServers = onOpenServers,
@@ -353,6 +367,30 @@ fun HomeScreen(
             }
         }
     }
+
+    if (showDnsDialog) {
+        AlertDialog(
+            onDismissRequest = { showDnsDialog = false },
+            title = { Text("DNS-серверы") },
+            text = {
+                OutlinedTextField(
+                    value = dnsText,
+                    onValueChange = { dnsText = it },
+                    singleLine = true,
+                    placeholder = { Text("1.1.1.1, 8.8.8.8") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.dnsServers = dnsText
+                    showDnsDialog = false
+                }) { Text("СОХРАНИТЬ") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDnsDialog = false }) { Text("ОТМЕНА") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -361,6 +399,8 @@ private fun DrawerContent(
     intervalSec: Int,
     autoConnect: Boolean,
     mtu: Int,
+    ipv6Enabled: Boolean,
+    dnsText: String,
     splitEnabled: Boolean,
     excludedCount: Int,
     serverTitle: String?,
@@ -368,6 +408,8 @@ private fun DrawerContent(
     onIntervalSec: (Int) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
     onMtu: (Int) -> Unit,
+    onIpv6Toggle: (Boolean) -> Unit,
+    onDnsClick: () -> Unit,
     onSplitToggle: (Boolean) -> Unit,
     onPickApps: () -> Unit,
     onOpenServers: () -> Unit,
@@ -453,6 +495,20 @@ private fun DrawerContent(
             minLabel = "1200",
             maxLabel = "1420",
             opaque = true,
+        )
+
+        TileRow(
+            title = "IPv6 через VPN",
+            value = if (ipv6Enabled) "включён" else "выключен",
+            opaque = true,
+            control = { NeonSwitch(ipv6Enabled, onIpv6Toggle) },
+        )
+
+        TileRow(
+            title = "DNS",
+            value = dnsText.ifBlank { "по умолчанию" },
+            opaque = true,
+            onClick = onDnsClick,
         )
 
         TileRow(
