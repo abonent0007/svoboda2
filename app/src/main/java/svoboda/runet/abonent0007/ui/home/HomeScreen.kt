@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -110,6 +111,7 @@ fun HomeScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = true,
         drawerContent = {
             DrawerContent(
                 graphEnabled = graphEnabled,
@@ -139,6 +141,7 @@ fun HomeScreen(
                 onPickApps = onPickApps,
                 onOpenServers = onOpenServers,
                 onCheckUpdates = onCheckUpdates,
+                onClose = { scope.launch { drawerState.close() } },
             )
         },
     ) {
@@ -369,6 +372,7 @@ private fun DrawerContent(
     onPickApps: () -> Unit,
     onOpenServers: () -> Unit,
     onCheckUpdates: () -> Unit,
+    onClose: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -378,15 +382,23 @@ private fun DrawerContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        NeonText(
-            text = "СВОБОДА 2.0",
-            gradient = VioletGradient,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            fontSize = 22.sp,
-            letterSpacing = 2.sp,
-            strokeWidth = 5.dp,
-            fillColor = Color(0xFFEDE9FF),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NeonText(
+                text = "СВОБОДА 2.0",
+                gradient = VioletGradient,
+                modifier = Modifier.weight(1f),
+                fontSize = 22.sp,
+                letterSpacing = 2.sp,
+                strokeWidth = 5.dp,
+                fillColor = Color(0xFFEDE9FF),
+            )
+            IconButton(onClick = onClose) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = TextPrimary)
+            }
+        }
         Spacer(modifier = Modifier.height(6.dp))
 
         TileRow(
@@ -455,6 +467,15 @@ private fun DrawerContent(
             opaque = true,
             onClick = onCheckUpdates,
         )
+
+        OutlinedButton(
+            onClick = onClose,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Border),
+        ) {
+            Text("ЗАКРЫТЬ МЕНЮ", color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+        }
     }
 }
 
