@@ -1,0 +1,53 @@
+package svoboda.runet.abonent0007.data
+
+import android.content.Context
+import android.content.SharedPreferences
+
+/** Настройки приложения (SharedPreferences-обёртка; DataStore — позже при миграции). */
+class Prefs(context: Context) {
+
+    private val prefs: SharedPreferences =
+        context.applicationContext.getSharedPreferences("svoboda2_prefs", Context.MODE_PRIVATE)
+
+    var pingGraphEnabled: Boolean
+        get() = prefs.getBoolean("ping_graph_enabled", true)
+        set(value) = prefs.edit().putBoolean("ping_graph_enabled", value).apply()
+
+    /** Интервал пинга, мс (1000..10000). */
+    var pingIntervalMs: Int
+        get() = prefs.getInt("ping_interval_ms", 2_000).coerceIn(1_000, 10_000)
+        set(value) = prefs.edit().putInt("ping_interval_ms", value.coerceIn(1_000, 10_000)).apply()
+
+    var autoConnect: Boolean
+        get() = prefs.getBoolean("auto_connect", false)
+        set(value) = prefs.edit().putBoolean("auto_connect", value).apply()
+
+    /** MTU туннеля (1200..1420). */
+    var tunnelMtu: Int
+        get() = prefs.getInt("tunnel_mtu", 1240).coerceIn(1_200, 1_420)
+        set(value) = prefs.edit().putInt("tunnel_mtu", value.coerceIn(1_200, 1_420)).apply()
+
+    /** Последний удачный конфиг — для автопереподключения без генерации. */
+    var lastGoodConfig: String
+        get() = prefs.getString("last_good_config", "").orEmpty()
+        set(value) = prefs.edit().putString("last_good_config", value).apply()
+
+    /** Подпись профиля, которым реально подключились (для UI после рестарта). */
+    var lastGoodLabel: String
+        get() = prefs.getString("last_good_label", "").orEmpty()
+        set(value) = prefs.edit().putString("last_good_label", value).apply()
+
+    /** Раздельное туннелирование: выбранные приложения идут мимо VPN. */
+    var splitTunnelEnabled: Boolean
+        get() = prefs.getBoolean("split_tunnel_enabled", false)
+        set(value) = prefs.edit().putBoolean("split_tunnel_enabled", value).apply()
+
+    var excludedApps: Set<String>
+        get() = prefs.getStringSet("excluded_apps", emptySet()).orEmpty()
+        set(value) = prefs.edit().putStringSet("excluded_apps", value).apply()
+
+    /** Активный собственный сервер; пусто — WARP по умолчанию. */
+    var activeServerId: String
+        get() = prefs.getString("active_server_id", "").orEmpty()
+        set(value) = prefs.edit().putString("active_server_id", value).apply()
+}
