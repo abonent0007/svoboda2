@@ -1,7 +1,12 @@
 package svoboda.runet.abonent0007.ui.own
 
-import androidx.compose.foundation.BorderStroke
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,7 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,8 +59,17 @@ fun ServerListDialog(
     onSelect: (OwnServer) -> Unit,
     onDelete: (OwnServer) -> Unit,
     onAdd: () -> Unit,
+    onImport: (List<OwnServer>) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        val parsed = uris.mapNotNull { importConf(context, it) }
+        if (parsed.isNotEmpty()) onImport(parsed)
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -119,7 +133,7 @@ fun ServerListDialog(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
@@ -127,18 +141,26 @@ fun ServerListDialog(
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, Border),
                     ) {
-                        Text("ЗАКРЫТЬ", color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+                        Text("ЗАКРЫТЬ", color = TextSecondary, fontSize = 12.sp, maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("text/*", "application/*", "*/*")) },
+                        modifier = Modifier.weight(1.4f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Border),
+                    ) {
+                        Text("ИМПОРТ .CONF", color = TextPrimary, fontSize = 12.sp, maxLines = 1)
                     }
                     Button(
                         onClick = onAdd,
-                        modifier = Modifier.weight(2f),
+                        modifier = Modifier.weight(1.6f),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AccentGreen,
                             contentColor = Color(0xFF062018),
                         ),
                     ) {
-                        Text("ДОБАВИТЬ СЕРВЕР", fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text("ДОБАВИТЬ", fontWeight = FontWeight.Bold, maxLines = 1, fontSize = 12.sp)
                     }
                 }
             }
@@ -329,4 +351,36 @@ fun AddServerDialog(
             }
         }
     }
+}
+
+private val COUNTRY_NAMES = mapOf(
+    "CA" to "Kanada", "CH" to "Shvejcariya", "JP" to "Yaponiya",
+    "MX" to "Meksika", "NL" to "Niderlandy", "NO" to "Norvegiya",
+    "US" to "SShA", "DE" to "Germaniya", "FR" to "Franciya",
+    "GB" to "Velikobritaniya", "FI" to "Finlyandiya", "SE" to "Shveciya",
+    "IT" to "Italiya", "ES" to "Ispaniya", "AU" to "Avstraliya",
+    "SG" to "Singapur", "HK" to "Gonkong", "PL" to "Polsha",
+    "RO" to "Rumyniya", "RU" to "Rossiya", "UA" to "Ukraina",
+    "BR" to "Brazil", "IN" to "Indiya", "TR" to "Turchiya",
+)
+
+private fun importConf(context: android.content.Context, uri: android.net.Uri): OwnServer? {
+    val text = runCatching {
+        context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+    }.getOrNull() ?: return null
+    if (!text.contains("[Peer]", ignoreCase = true)) return null
+    val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "imported"
+    val decoded = java.net.URLDecoder.decode(rawName, "UTF-8")
+    val code = decoded.substringBefore('-').trim().uppercase().take(2)
+        .ifBlank { decoded.take(2).uppercase() }
+    val country = COUNTRY_NAMES[code] ?: code
+    val ep = OwnServerParser.endpoint(text)
+    return OwnServer(
+        countryName = country,
+        countryCode = code,
+        city = "imported",
+        endpointHost = ep?.first.orEmpty(),
+        endpointPort = ep?.second ?: 0,
+        config = text.trim(),
+    )
 }

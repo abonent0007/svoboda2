@@ -165,6 +165,10 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onAdd = { showAddServer = true },
+                        onImport = { imported ->
+                            imported.forEach { AppGraph.servers.add(it) }
+                            servers = AppGraph.servers.list()
+                        },
                         onDismiss = { showServers = false },
                     )
                 }
