@@ -43,6 +43,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import svoboda.runet.abonent0007.own.OwnServer
 import svoboda.runet.abonent0007.own.OwnServerParser
+import svoboda.runet.abonent0007.warp.ConfigValidator
 import svoboda.runet.abonent0007.ui.theme.AccentGreen
 import svoboda.runet.abonent0007.ui.theme.Border
 import svoboda.runet.abonent0007.ui.theme.Elevated
@@ -232,7 +233,8 @@ fun AddServerDialog(
     var config by remember { mutableStateOf("") }
 
     val parsed = OwnServerParser.endpoint(config)
-    val valid = countryName.isNotBlank() && config.contains("[Peer]", ignoreCase = true) && parsed != null
+    val validation = remember(config) { ConfigValidator.validate(config) }
+    val valid = countryName.isNotBlank() && validation.isValid && parsed != null
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -304,9 +306,16 @@ fun AddServerDialog(
                     ),
                 )
                 Text(
-                    text = parsed?.let { "Endpoint: ${it.first}:${it.second}" }
-                        ?: "Endpoint не найден в конфиге",
-                    color = if (parsed != null) AccentGreen else TextSecondary,
+                    text = if (validation.errors.isNotEmpty()) {
+                        "Ошибка: ${validation.errors.first()}"
+                    } else if (parsed != null) {
+                        "Endpoint: ${parsed.first}:${parsed.second}" +
+                            (validation.warnings.firstOrNull()?.let { " · $it" } ?: "")
+                    } else {
+                        "Endpoint не найден в конфиге"
+                    },
+                    color = if (validation.errors.isNotEmpty()) Color(0xFFFF6B6B)
+                    else if (parsed != null) AccentGreen else TextSecondary,
                     fontSize = 11.sp,
                 )
 
