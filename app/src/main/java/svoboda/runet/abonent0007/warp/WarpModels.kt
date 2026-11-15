@@ -25,6 +25,16 @@ data class BundledSeed(
     val number: Int get() = seed_order + 1
 }
 
+/** Один сгенерированный вручную WARP-профиль. */
+@Serializable
+data class GeneratedProfile(
+    val createdAt: Long = 0L,
+    val host: String = "",
+    val port: Int = 0,
+    val config: String = "",
+    val configEncrypted: String = "",
+)
+
 /** Результат регистрации WARP-устройства в Cloudflare. */
 data class WarpIdentity(
     val privateKey: String,

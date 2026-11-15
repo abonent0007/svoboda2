@@ -27,10 +27,28 @@ class Prefs(context: Context) {
         get() = prefs.getInt("tunnel_mtu", 1240).coerceIn(1_200, 1_420)
         set(value) = prefs.edit().putInt("tunnel_mtu", value.coerceIn(1_200, 1_420)).apply()
 
-    /** Последний удачный конфиг — для автопереподключения без генерации. */
+    /** Последний удачный конфиг — для автопереподключения (хранится зашифрованным). */
     var lastGoodConfig: String
-        get() = prefs.getString("last_good_config", "").orEmpty()
-        set(value) = prefs.edit().putString("last_good_config", value).apply()
+        get() {
+            val raw = prefs.getString("last_good_config", "").orEmpty()
+            if (raw.isBlank()) return ""
+            if (!svoboda.runet.abonent0007.secure.SecureConfigStorage.isEncrypted(raw)) {
+                // legacy plaintext -> migrate
+                svoboda.runet.abonent0007.secure.SecureConfigStorage.encrypt(raw)?.let { enc ->
+                    prefs.edit().putString("last_good_config", enc).apply()
+                }
+                return raw
+            }
+            return svoboda.runet.abonent0007.secure.SecureConfigStorage.decrypt(raw).orEmpty()
+        }
+        set(value) {
+            if (value.isBlank()) {
+                prefs.edit().remove("last_good_config").apply()
+                return
+            }
+            val enc = svoboda.runet.abonent0007.secure.SecureConfigStorage.encrypt(value) ?: value
+            prefs.edit().putString("last_good_config", enc).apply()
+        }
 
     /** Подпись профиля, которым реально подключились (для UI после рестарта). */
     var lastGoodLabel: String

@@ -3,13 +3,10 @@ package svoboda.runet.abonent0007.own
 import android.content.Context
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import svoboda.runet.abonent0007.secure.SecureConfigStorage
 import java.io.File
 import java.util.UUID
 
-/**
- * Хранилище собственных AmneziaWG-серверов (файл в filesDir).
- * Список — в порядке добавления; активный сервер хранится в Prefs.
- */
 class OwnServerStore(context: Context) {
 
     companion object {
@@ -26,41 +23,71 @@ class OwnServerStore(context: Context) {
             val seeded = runCatching {
                 val text = appContext.assets.open(SEED_ASSET).bufferedReader(Charsets.UTF_8).use { it.readText() }
                 json.decodeFromString<List<OwnServer>>(text)
-            }.getOrDefault(emptyList())
-            if (seeded.isNotEmpty()) {
-                save(seeded)
-            } else {
-                // Пустой файл — чтобы не пытаться пересаживать при каждом запуске.
-                save(emptyList())
-            }
+            }.getOrDefault(emptyList<OwnServer>())
+            val toSave = seeded.map { it.copy(config = "", configEncrypted = SecureConfigStorage.encrypt(it.config) ?: it.configEncrypted) }
+            saveEncrypted(toSave.ifEmpty { emptyList() })
+            if (seeded.isEmpty()) saveEncrypted(emptyList())
         }
     }
 
-    fun list(): List<OwnServer> = runCatching {
-        if (!file.exists()) emptyList()
-        else json.decodeFromString<List<OwnServer>>(file.readText(Charsets.UTF_8))
-    }.getOrDefault(emptyList())
+    fun list(): List<OwnServer> {
+        val raw = runCatching {
+            if (!file.exists()) emptyList()
+            else json.decodeFromString<List<OwnServer>>(file.readText(Charsets.UTF_8))
+        }.getOrDefault(emptyList<OwnServer>())
+
+        // Миграция: открытый config -> зашифрованный.
+        var changed = false
+        val migrated = raw.map { s ->
+            if (s.configEncrypted.isNotBlank()) {
+                s.copy(config = SecureConfigStorage.decrypt(s.configEncrypted) ?: s.config)
+            } else if (s.config.isNotBlank()) {
+                val enc = SecureConfigStorage.encrypt(s.config)
+                if (enc != null) {
+                    changed = true
+                    s.copy(configEncrypted = enc, config = s.config)
+                } else {
+                    s
+                }
+            } else {
+                s
+            }
+        }
+        if (changed) saveEncrypted(migrated)
+        return migrated
+    }
 
     fun add(server: OwnServer): OwnServer {
+        val enc = SecureConfigStorage.encrypt(server.config) ?: server.configEncrypted
         val withId = server.copy(
             id = server.id.ifBlank { UUID.randomUUID().toString() },
             addedAt = server.addedAt.takeIf { it > 0 } ?: System.currentTimeMillis(),
+            configEncrypted = enc,
+            config = server.config,
         )
-        save(list() + withId)
+        val updated = list() + withId
+        saveEncrypted(updated)
         return withId
     }
 
     fun update(server: OwnServer) {
-        save(list().map { if (it.id == server.id) server else it })
+        val enc = if (server.config.isNotBlank()) {
+            SecureConfigStorage.encrypt(server.config) ?: server.configEncrypted
+        } else {
+            server.configEncrypted
+        }
+        val updated = server.copy(configEncrypted = enc, config = server.config)
+        saveEncrypted(list().map { if (it.id == server.id) updated else it })
     }
 
     fun remove(id: String) {
-        save(list().filterNot { it.id == id })
+        saveEncrypted(list().filterNot { it.id == id })
     }
 
     fun find(id: String): OwnServer? = list().firstOrNull { it.id == id }
 
-    private fun save(items: List<OwnServer>) {
-        runCatching { file.writeText(json.encodeToString(items), Charsets.UTF_8) }
+    private fun saveEncrypted(items: List<OwnServer>) {
+        val toStore = items.map { it.copy(config = "") }
+        runCatching { file.writeText(json.encodeToString(toStore), Charsets.UTF_8) }
     }
 }

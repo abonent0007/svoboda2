@@ -79,7 +79,7 @@ class ConnectionManager(
     suspend fun connectManual(): Boolean {
         activeServer()?.let { server ->
             _profileLabel.value = serverLabel(server)
-            val ok = controller.connect(server.config)
+            val ok = controller.connect(server.resolvedConfig)
             markServerStatus(server, ok)
             return ok
         }
@@ -144,7 +144,7 @@ class ConnectionManager(
     suspend fun connectLastKnown(): Boolean {
         activeServer()?.let { server ->
             _profileLabel.value = serverLabel(server)
-            val ok = controller.connect(server.config)
+            val ok = controller.connect(server.resolvedConfig)
             markServerStatus(server, ok)
             return ok
         }

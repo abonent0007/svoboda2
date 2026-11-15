@@ -1,6 +1,7 @@
 package svoboda.runet.abonent0007.own
 
 import kotlinx.serialization.Serializable
+import svoboda.runet.abonent0007.secure.SecureConfigStorage
 
 /** Собственный AmneziaWG-сервер (локация + полный конфиг). */
 @Serializable
@@ -12,6 +13,7 @@ data class OwnServer(
     val endpointHost: String = "",
     val endpointPort: Int = 0,
     val config: String = "",
+    val configEncrypted: String = "",
     val lastStatus: String = "",
     val lastCheckedAt: Long = 0L,
     val addedAt: Long = 0L,
@@ -21,7 +23,7 @@ data class OwnServer(
     val flag: String
         get() {
             val code = countryCode.trim().uppercase()
-            if (code.length != 2 || code.any { it !in 'A'..'Z' }) return "🌐"
+            if (code.length != 2 || code.any { it !in 'A'..'Z' }) return "\uD83C\uDF10"
             val base = 0x1F1E6 - 'A'.code
             return String(Character.toChars(base + code[0].code)) +
                 String(Character.toChars(base + code[1].code))
@@ -33,8 +35,13 @@ data class OwnServer(
             val head = listOf(flag, countryName.ifBlank { countryCode })
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
-            return if (city.isBlank()) head else "$head · $city"
+            return if (city.isBlank()) head else "$head \u00B7 $city"
         }
+
+    /** Расшифрованный конфиг (из открытого поля или из зашифрованного). */
+    val resolvedConfig: String
+        get() = if (config.isNotBlank()) config
+        else SecureConfigStorage.decrypt(configEncrypted).orEmpty()
 }
 
 /** Извлекает Endpoint = host:port из AmneziaWG-конфига. */

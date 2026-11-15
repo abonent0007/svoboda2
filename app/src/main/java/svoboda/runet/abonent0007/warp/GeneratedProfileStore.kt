@@ -1,26 +1,11 @@
 package svoboda.runet.abonent0007.warp
 
 import android.content.Context
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import svoboda.runet.abonent0007.secure.SecureConfigStorage
 import java.io.File
 
-/** Один сгенерированный вручную WARP-профиль. */
-@Serializable
-data class GeneratedProfile(
-    val createdAt: Long = 0L,
-    val host: String = "",
-    val port: Int = 0,
-    val config: String = "",
-)
-
-/**
- * Список сгенерированных профилей (файл в filesDir).
- *
- * Порядок — от самого старого к новому. Откат после неудачи идёт
- * с НАЧАЛА списка (первый сгенерированный профиль), как согласовано.
- */
 class GeneratedProfileStore(context: Context) {
 
     companion object {
@@ -31,19 +16,47 @@ class GeneratedProfileStore(context: Context) {
     private val file = File(context.applicationContext.filesDir, FILE_NAME)
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
-    fun list(): List<GeneratedProfile> = runCatching {
-        if (!file.exists()) emptyList()
-        else json.decodeFromString<List<GeneratedProfile>>(file.readText(Charsets.UTF_8))
-    }.getOrDefault(emptyList())
+    fun list(): List<GeneratedProfile> {
+        val raw = runCatching {
+            if (!file.exists()) emptyList()
+            else json.decodeFromString<List<GeneratedProfile>>(file.readText(Charsets.UTF_8))
+        }.getOrDefault(emptyList<GeneratedProfile>())
+
+        var changed = false
+        val migrated = raw.map { p ->
+            if (p.configEncrypted.isNotBlank()) {
+                p.copy(config = SecureConfigStorage.decrypt(p.configEncrypted) ?: p.config)
+            } else if (p.config.isNotBlank()) {
+                val enc = SecureConfigStorage.encrypt(p.config)
+                if (enc != null) {
+                    changed = true
+                    p.copy(configEncrypted = enc, config = p.config)
+                } else {
+                    p
+                }
+            } else {
+                p
+            }
+        }
+        if (changed) saveEncrypted(migrated)
+        return migrated
+    }
 
     fun add(profile: GeneratedProfile) {
         runCatching {
-            val updated = (list() + profile).takeLast(MAX_ENTRIES)
-            file.writeText(json.encodeToString(updated), Charsets.UTF_8)
+            val enc = SecureConfigStorage.encrypt(profile.config) ?: profile.configEncrypted
+            val withEnc = profile.copy(configEncrypted = enc, config = profile.config)
+            val updated = (list() + withEnc).takeLast(MAX_ENTRIES)
+            saveEncrypted(updated)
         }
     }
 
     fun clear() {
         runCatching { file.delete() }
+    }
+
+    private fun saveEncrypted(items: List<GeneratedProfile>) {
+        val toStore: List<GeneratedProfile> = items.map { profile: GeneratedProfile -> profile.copy(config = "") }
+        runCatching { file.writeText(json.encodeToString(toStore), Charsets.UTF_8) }
     }
 }
