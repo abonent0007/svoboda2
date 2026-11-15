@@ -4,6 +4,7 @@ import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import svoboda.runet.abonent0007.data.Prefs
+import svoboda.runet.abonent0007.state.ConnectionStateRepository
 import svoboda.runet.abonent0007.split.SplitTunnelManager
 import svoboda.runet.abonent0007.split.SplitTunnelStore
 import svoboda.runet.abonent0007.own.OwnServerStore
@@ -17,6 +18,7 @@ import svoboda.runet.abonent0007.warp.SeedCatalog
 
 /** Простой граф зависимостей (без DI-фреймворка). */
 object AppGraph {
+    lateinit var connectionState: ConnectionStateRepository
     lateinit var vpn: VpnController
     lateinit var manager: ConnectionManager
     lateinit var reconnect: ReconnectCoordinator
@@ -32,7 +34,8 @@ class SvobodaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppGraph.prefs = Prefs(this)
-        AppGraph.vpn = VpnController(this, AppGraph.prefs)
+        AppGraph.connectionState = ConnectionStateRepository()
+        AppGraph.vpn = VpnController(this, AppGraph.prefs, AppGraph.connectionState)
         AppGraph.seeds = SeedCatalog.load(this)
         AppGraph.servers = OwnServerStore(this)
         AppGraph.splitManager = SplitTunnelManager(this, SplitTunnelStore(this), AppGraph.prefs)

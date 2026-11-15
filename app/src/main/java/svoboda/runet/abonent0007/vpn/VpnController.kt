@@ -21,6 +21,9 @@ import org.amnezia.awg.backend.Tunnel
 import org.amnezia.awg.config.Config
 import svoboda.runet.abonent0007.split.SplitTunnelManager
 import svoboda.runet.abonent0007.split.SplitTunnelStore
+import svoboda.runet.abonent0007.state.ConnectionStateRepository
+import svoboda.runet.abonent0007.state.TunnelTransportPhase
+import svoboda.runet.abonent0007.state.VpnSessionPhase
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.net.NetProbe
 import svoboda.runet.abonent0007.warp.ConfigNormalizer
@@ -41,6 +44,7 @@ enum class VpnPhase {
 class VpnController(
     context: Context,
     private val prefs: Prefs,
+    private val stateRepo: ConnectionStateRepository? = null,
 ) {
 
     companion object {
@@ -113,6 +117,8 @@ class VpnController(
 
     suspend fun connect(configText: String): Boolean = withContext(Dispatchers.IO) {
         _phase.value = VpnPhase.PREPARING
+        stateRepo?.setVpn(VpnSessionPhase.PREPARING)
+        stateRepo?.setTransport(TunnelTransportPhase.IDLE)
         _error.value = null
         _exit.value = null
         _pingHistory.value = emptyList()
@@ -131,6 +137,8 @@ class VpnController(
             )
             activeConfigText = configText
             _phase.value = VpnPhase.CONNECTING
+            stateRepo?.setVpn(VpnSessionPhase.CONNECTING)
+            stateRepo?.setTransport(TunnelTransportPhase.CONNECTING)
             backend.setState(tunnel, Tunnel.State.UP, config)
 
             // Ожидание handshake.
@@ -146,26 +154,36 @@ class VpnController(
             if (!handshakeUp) {
                 backend.setState(tunnel, Tunnel.State.DOWN, null)
                 _phase.value = VpnPhase.ERROR
+            stateRepo?.setVpn(VpnSessionPhase.ERROR)
+            stateRepo?.setTransport(TunnelTransportPhase.FAILED)
                 _error.value = "Нет ответа сервера (handshake timeout)"
                 return@withContext false
             }
 
             // Proof: реальный трафик через туннель.
             _phase.value = VpnPhase.VERIFYING
+            stateRepo?.setVpn(VpnSessionPhase.ESTABLISHING)
+            stateRepo?.setTransport(TunnelTransportPhase.HANDSHAKING)
             val exit = NetProbe.fetchExit()
             if (exit == null) {
                 backend.setState(tunnel, Tunnel.State.DOWN, null)
                 _phase.value = VpnPhase.ERROR
+            stateRepo?.setVpn(VpnSessionPhase.ERROR)
+            stateRepo?.setTransport(TunnelTransportPhase.FAILED)
                 _error.value = "Туннель поднят, но трафик не проходит"
                 return@withContext false
             }
             _exit.value = exit
             _phase.value = VpnPhase.CONNECTED
+            stateRepo?.setVpn(VpnSessionPhase.CONNECTED)
+            stateRepo?.setTransport(TunnelTransportPhase.FLOWING)
             true
         }.getOrElse { e ->
             android.util.Log.e("SvobodaVpn", "connect failed", e)
             backend.runCatching { backend.setState(tunnel, Tunnel.State.DOWN, null) }
             _phase.value = VpnPhase.ERROR
+            stateRepo?.setVpn(VpnSessionPhase.ERROR)
+            stateRepo?.setTransport(TunnelTransportPhase.FAILED)
             _error.value = when (e) {
                 is BackendException -> "${e.javaClass.simpleName}(${e.reason}): ${e.message ?: ""}"
                 else -> "${e.javaClass.simpleName}: ${e.message ?: "Ошибка подключения"}"
@@ -180,6 +198,8 @@ class VpnController(
         _exit.value = null
         _lastPing.value = null
         _phase.value = VpnPhase.IDLE
+        stateRepo?.setVpn(VpnSessionPhase.STOPPED)
+        stateRepo?.setTransport(TunnelTransportPhase.CLOSED)
     }
 
     /** Кнопка «Проверить связь»: IP/страна + три пинга. */
@@ -216,8 +236,8 @@ class VpnController(
      * VpnService.Builder.addDisallowedApplication применяется в GoBackend.
      */
     private fun applySplitTunnel(config: String): String {
-        val injection = splitManager.buildInjection(currentProfileId.ifBlank { "default" })
-        if (injection == null) return config
+        val injectionOrNull = splitManager.buildInjection(this.currentProfileId.ifBlank { "default" })
+        val injection = injectionOrNull ?: return config
         val lines = config.lines().toMutableList()
         val ifaceIndex = lines.indexOfFirst { it.trim().equals("[Interface]", ignoreCase = true) }
         if (ifaceIndex < 0) return config
