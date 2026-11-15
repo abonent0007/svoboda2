@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
 
         val controller = AppGraph.vpn
         val manager = AppGraph.manager
+        val reconnect = AppGraph.reconnect
 
         setContent {
             val phase by controller.phase.collectAsState()
@@ -52,7 +53,7 @@ class MainActivity : ComponentActivity() {
 
             fun doConnect(scope: CoroutineScope) {
                 scope.launch {
-                    manager.connectManual()
+                    reconnect.userConnect(true)
                 }
             }
 
@@ -73,7 +74,7 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(Unit) {
                 if (controller.prepareVpn(this@MainActivity) == null) {
-                    manager.autoConnectOnce()
+                    reconnect.userConnect(false)
                 }
             }
 
@@ -93,15 +94,14 @@ class MainActivity : ComponentActivity() {
                     serverTitle = activeServer?.locationTitle,
                     onConnect = { requestConnect() },
                     onDisconnect = {
-                        controller.disconnect()
-                        manager.resetLabel()
+                        scope.launch { reconnect.userDisconnect() }
                     },
                     onTest = { scope.launch { controller.runTest() } },
                     onSplitToggle = { enabled ->
                         splitEnabled = enabled
                         AppGraph.prefs.splitTunnelEnabled = enabled
                         if (controller.isConnected) {
-                            scope.launch { manager.reconnectLastKnown() }
+                            scope.launch { reconnect.userConnect(false) }
                         }
                     },
                     onPickApps = { showPicker = true },
@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
                             showServers = false
                             manager.resetLabel()
                             if (controller.isConnected) {
-                                scope.launch { manager.useWarp() }
+                                scope.launch { reconnect.userConnect(false) }
                             }
                         },
                         onSelect = { server ->
@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
                             if (intent != null) {
                                 consentLauncher.launch(intent)
                             } else {
-                                scope.launch { manager.selectServer(server) }
+                                scope.launch { reconnect.userConnect(true) }
                             }
                         },
                         onDelete = { server ->
