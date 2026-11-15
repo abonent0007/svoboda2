@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
                     splitEnabled = splitEnabled,
                     excludedCount = excluded.size,
                     serverTitle = activeServer?.locationTitle,
+                    splitProfileId = activeServer?.id ?: "warp",
                     onConnect = { requestConnect() },
                     onDisconnect = {
                         scope.launch { reconnect.userDisconnect() }

@@ -19,6 +19,8 @@ import org.amnezia.awg.backend.BackendException
 import org.amnezia.awg.backend.GoBackend
 import org.amnezia.awg.backend.Tunnel
 import org.amnezia.awg.config.Config
+import svoboda.runet.abonent0007.split.SplitTunnelManager
+import svoboda.runet.abonent0007.split.SplitTunnelStore
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.net.NetProbe
 import svoboda.runet.abonent0007.warp.ConfigNormalizer
@@ -50,6 +52,10 @@ class VpnController(
 
     private val backend: Backend = GoBackend(context.applicationContext)
     private val appContext = context.applicationContext
+    private val splitManager = SplitTunnelManager(appContext, SplitTunnelStore(appContext), prefs)
+
+    /** Идентификатор активного профиля (для per-profile split-правил). */
+    var currentProfileId: String = ""
 
     private val tunnel = object : Tunnel {
         override fun getName(): String = TUNNEL_NAME
@@ -210,15 +216,13 @@ class VpnController(
      * VpnService.Builder.addDisallowedApplication применяется в GoBackend.
      */
     private fun applySplitTunnel(config: String): String {
-        if (!prefs.splitTunnelEnabled) return config
-        val apps = prefs.excludedApps.filter { it.isNotBlank() && it != appContext.packageName }
-        if (apps.isEmpty()) return config
-        val line = "ExcludedApplications = ${apps.joinToString(", ")}"
-        android.util.Log.d("SvobodaVpn", "split tunnel: ${apps.size} apps -> $line")
+        val injection = splitManager.buildInjection(currentProfileId.ifBlank { "default" })
+        if (injection == null) return config
         val lines = config.lines().toMutableList()
         val ifaceIndex = lines.indexOfFirst { it.trim().equals("[Interface]", ignoreCase = true) }
         if (ifaceIndex < 0) return config
-        lines.add(ifaceIndex + 1, line)
+        lines.add(ifaceIndex + 1, injection)
+        android.util.Log.d("SvobodaVpn", "split tunnel: $injection")
         return lines.joinToString("\n")
     }
 }

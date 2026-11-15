@@ -78,6 +78,7 @@ class ConnectionManager(
     /** Ручное подключение: свой сервер, иначе новый WARP-профиль. */
     suspend fun connectManual(): Boolean {
         activeServer()?.let { server ->
+            controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)
             val ok = controller.connect(server.resolvedConfig)
             markServerStatus(server, ok)
@@ -87,6 +88,7 @@ class ConnectionManager(
     }
 
     private suspend fun connectWarpWithGeneration(): Boolean {
+        controller.currentProfileId = "warp"
         // Jc/Jmin/Jmax и I1 берём из проверенного профиля №11: та же
         // обфускация, что уже проходит DPI.
         val seedForParams = SeedCatalog.defaultSeed(seeds)
@@ -143,6 +145,7 @@ class ConnectionManager(
     /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг. */
     suspend fun connectLastKnown(): Boolean {
         activeServer()?.let { server ->
+            controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)
             val ok = controller.connect(server.resolvedConfig)
             markServerStatus(server, ok)
@@ -151,6 +154,7 @@ class ConnectionManager(
         val config = lastGoodConfig ?: store.list().lastOrNull()?.config
             ?: SeedCatalog.defaultSeed(seeds)?.raw_config
             ?: return false
+        controller.currentProfileId = "warp"
         return controller.connect(config)
     }
 

@@ -4,6 +4,8 @@ import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import svoboda.runet.abonent0007.data.Prefs
+import svoboda.runet.abonent0007.split.SplitTunnelManager
+import svoboda.runet.abonent0007.split.SplitTunnelStore
 import svoboda.runet.abonent0007.own.OwnServerStore
 import svoboda.runet.abonent0007.vpn.ConnectionManager
 import svoboda.runet.abonent0007.vpn.ProfileTestCoordinator
@@ -22,6 +24,7 @@ object AppGraph {
     lateinit var prefs: Prefs
     lateinit var seeds: List<BundledSeed>
     lateinit var servers: OwnServerStore
+    lateinit var splitManager: SplitTunnelManager
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob())
 }
 
@@ -32,6 +35,7 @@ class SvobodaApp : Application() {
         AppGraph.vpn = VpnController(this, AppGraph.prefs)
         AppGraph.seeds = SeedCatalog.load(this)
         AppGraph.servers = OwnServerStore(this)
+        AppGraph.splitManager = SplitTunnelManager(this, SplitTunnelStore(this), AppGraph.prefs)
         AppGraph.manager = ConnectionManager(
             controller = AppGraph.vpn,
             store = GeneratedProfileStore(this),

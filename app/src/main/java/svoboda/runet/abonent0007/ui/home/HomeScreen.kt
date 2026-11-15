@@ -52,6 +52,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import svoboda.runet.abonent0007.split.SplitTunnelMode
+import svoboda.runet.abonent0007.split.SplitTunnelPresets
+import svoboda.runet.abonent0007.AppGraph
 import svoboda.runet.abonent0007.BuildConfig
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.ui.theme.AccentBlue
@@ -90,6 +93,7 @@ fun HomeScreen(
     splitEnabled: Boolean,
     excludedCount: Int,
     serverTitle: String?,
+    splitProfileId: String,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onTest: () -> Unit,
@@ -130,6 +134,7 @@ fun HomeScreen(
                 splitEnabled = splitEnabled,
                 excludedCount = excludedCount,
                 serverTitle = serverTitle,
+                splitProfileId = splitProfileId,
                 onGraphEnabled = {
                     graphEnabled = it
                     prefs.pingGraphEnabled = it
@@ -404,6 +409,7 @@ private fun DrawerContent(
     splitEnabled: Boolean,
     excludedCount: Int,
     serverTitle: String?,
+    splitProfileId: String,
     onGraphEnabled: (Boolean) -> Unit,
     onIntervalSec: (Int) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
@@ -424,6 +430,9 @@ private fun DrawerContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        val scope = rememberCoroutineScope()
+        val initialSplit = remember(splitProfileId) { AppGraph.splitManager.resolve(splitProfileId) }
+        var splitMode by remember(splitProfileId) { mutableStateOf(initialSplit.mode) }
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -469,14 +478,40 @@ private fun DrawerContent(
         )
 
         TileRow(
-            title = "Раздельное туннелирование",
-            value = when {
-                excludedCount > 0 -> "$excludedCount прил. · выбрать"
-                else -> "выбрать приложения"
+            title = "Режим split-tunnel",
+            value = when (splitMode) {
+                SplitTunnelMode.ALL -> "весь трафик через VPN"
+                SplitTunnelMode.ONLY_SELECTED -> "только выбранные через VPN"
+                SplitTunnelMode.ALL_EXCEPT_SELECTED -> "все кроме выбранных"
             },
             opaque = true,
-            onClick = onPickApps,
-            control = { NeonSwitch(splitEnabled, onSplitToggle) },
+            onClick = {
+                val next = when (splitMode) {
+                    SplitTunnelMode.ALL -> SplitTunnelMode.ONLY_SELECTED
+                    SplitTunnelMode.ONLY_SELECTED -> SplitTunnelMode.ALL_EXCEPT_SELECTED
+                    SplitTunnelMode.ALL_EXCEPT_SELECTED -> SplitTunnelMode.ALL
+                }
+                splitMode = next
+                val cfg = AppGraph.splitManager.resolve(splitProfileId).copy(mode = next)
+                AppGraph.splitManager.update(splitProfileId, cfg)
+                if (AppGraph.vpn.isConnected) scope.launch { AppGraph.reconnect.userConnect(false) }
+            },
+        )
+
+        TileRow(
+            title = "Пресет: Российские приложения",
+            value = "исключить из VPN",
+            opaque = true,
+            onClick = {
+                val cfg = AppGraph.splitManager.resolve(splitProfileId).copy(
+                    mode = SplitTunnelMode.ALL_EXCEPT_SELECTED,
+                    packageNames = SplitTunnelPresets.russianApps.packages,
+                    presetId = SplitTunnelPresets.russianApps.id,
+                )
+                splitMode = SplitTunnelMode.ALL_EXCEPT_SELECTED
+                AppGraph.splitManager.update(splitProfileId, cfg)
+                if (AppGraph.vpn.isConnected) scope.launch { AppGraph.reconnect.userConnect(false) }
+            },
         )
 
         TileRow(
