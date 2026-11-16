@@ -209,8 +209,14 @@ class ReconnectCoordinator(
                 if (healthy) {
                     consecutiveFailures = 0
                     _state.value = ReconnectState.CONNECTED
+                    // Туннель восстановился — снимаем деградированный статус.
+                    controller.markDegraded(false)
                 } else {
                     consecutiveFailures++
+                    if (consecutiveFailures >= 2) {
+                        // Туннель сохраняем, показываем «интернет не подтверждён».
+                        controller.markDegraded(true)
+                    }
                     if (consecutiveFailures >= 3) {
                         _state.value = ReconnectState.DEGRADED
                         scheduleReconnect(currentSession)

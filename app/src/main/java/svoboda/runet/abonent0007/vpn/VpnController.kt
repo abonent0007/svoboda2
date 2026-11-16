@@ -96,14 +96,22 @@ class VpnController(
 
     fun prepareVpn(context: Context): Intent? = VpnService.prepare(context)
 
-    val isConnected: Boolean get() = _phase.value == VpnPhase.CONNECTED
+    val isConnected: Boolean
+        get() = _phase.value == VpnPhase.CONNECTED || _phase.value == VpnPhase.DEGRADED
+
+    /** Явно переводит фазу в/из DEGRADED (используется health-монитором). */
+    fun markDegraded(degraded: Boolean) {
+        _phase.value = if (degraded) VpnPhase.DEGRADED else VpnPhase.CONNECTED
+        stateRepo?.setVpn(if (degraded) VpnSessionPhase.DEGRADED else VpnSessionPhase.CONNECTED)
+        stateRepo?.setTransport(if (degraded) TunnelTransportPhase.DEGRADED else TunnelTransportPhase.FLOWING)
+    }
 
     /** Запускает фоновую петлю пинга (один раз из Application). */
     fun startMonitor(scope: CoroutineScope) {
         if (monitorJob?.isActive == true) return
         monitorJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                if (_phase.value == VpnPhase.CONNECTED && prefs.pingGraphEnabled) {
+                if ((_phase.value == VpnPhase.CONNECTED || _phase.value == VpnPhase.DEGRADED) && prefs.pingGraphEnabled) {
                     val ping = NetProbe.tcpPing()
                     // NetProbe возвращает -1 при ошибке: не показываем «-1 мс» и не портим график.
                     _lastPing.value = ping.takeIf { it >= 0 }
@@ -164,17 +172,29 @@ class VpnController(
             }
 
             // Proof: реальный трафик через туннель.
+            // Одной неудачи мало: пробуем до 3 раз. При первой ошибке туннель НЕ гасим —
+            // Cloudflare/маршрут могут быть временно недоступны.
             _phase.value = VpnPhase.VERIFYING
             stateRepo?.setVpn(VpnSessionPhase.ESTABLISHING)
             stateRepo?.setTransport(TunnelTransportPhase.HANDSHAKING)
-            val exit = NetProbe.fetchExit()
+            suspend fun tryFetch(): NetProbe.ExitInfo? {
+                var r = NetProbe.fetchExit()
+                repeat(2) { attempt ->
+                    if (r == null) {
+                        delay(if (attempt == 0) 2_000L else 5_000L)
+                        r = NetProbe.fetchExit()
+                    }
+                }
+                return r
+            }
+            val exit = tryFetch()
             if (exit == null) {
-                backend.setState(tunnel, Tunnel.State.DOWN, null)
-                _phase.value = VpnPhase.ERROR
-            stateRepo?.setVpn(VpnSessionPhase.ERROR)
-            stateRepo?.setTransport(TunnelTransportPhase.FAILED)
-                _error.value = "Туннель поднят, но трафик не проходит"
-                return@withContext false
+                // Handshake состоялся — туннель остаётся живым: «туннель есть, интернета нет».
+                _phase.value = VpnPhase.DEGRADED
+                stateRepo?.setVpn(VpnSessionPhase.DEGRADED)
+                stateRepo?.setTransport(TunnelTransportPhase.DEGRADED)
+                _error.value = "Туннель установлен, интернет не подтверждён"
+                return@withContext true
             }
             _exit.value = exit
             _phase.value = VpnPhase.CONNECTED

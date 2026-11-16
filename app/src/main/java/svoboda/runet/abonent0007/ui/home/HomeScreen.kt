@@ -126,7 +126,7 @@ fun HomeScreen(
     onOpenServers: () -> Unit,
     onCheckUpdates: () -> Unit,
 ) {
-    val connected = phase == VpnPhase.CONNECTED
+    val connected = phase == VpnPhase.CONNECTED || phase == VpnPhase.DEGRADED
     val busy = phase == VpnPhase.PREPARING ||
         phase == VpnPhase.CONNECTING ||
         phase == VpnPhase.VERIFYING
@@ -935,6 +935,16 @@ private fun StatusText(phase: VpnPhase) {
             strokeWidth = 7.dp,
             glowAlpha = 0.9f,
             fillColor = Color(0xFFE9FFF5),
+        )
+
+        VpnPhase.DEGRADED -> NeonText(
+            text = "НЕТ ИНТЕРНЕТА",
+            gradient = listOf(Color(0xFFFFD166), Color(0xFFFFB703), Color(0xFFFF8C42)),
+            fontSize = 30.sp,
+            letterSpacing = 2.sp,
+            strokeWidth = 6.dp,
+            glowAlpha = 0.6f,
+            fillColor = Color(0xFFFFF4E0),
         )
 
         VpnPhase.PREPARING, VpnPhase.CONNECTING, VpnPhase.VERIFYING -> {
