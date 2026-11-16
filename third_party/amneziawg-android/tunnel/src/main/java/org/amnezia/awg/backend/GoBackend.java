@@ -46,6 +46,7 @@ public final class GoBackend implements Backend {
     private static final int DNS_RESOLUTION_RETRIES = 10;
     private static final String TAG = "AmneziaWG/GoBackend";
     @Nullable private static AlwaysOnCallback alwaysOnCallback;
+    @Nullable private static LifecycleCallback lifecycleCallback;
     private static GhettoCompletableFuture<VpnService> vpnService = new GhettoCompletableFuture<>();
     private final Context context;
     @Nullable private Config currentConfig;
@@ -72,6 +73,15 @@ public final class GoBackend implements Backend {
      */
     public static void setAlwaysOnCallback(final AlwaysOnCallback cb) {
         alwaysOnCallback = cb;
+    }
+
+    public static void setLifecycleCallback(final LifecycleCallback cb) {
+        lifecycleCallback = cb;
+    }
+
+    public interface LifecycleCallback {
+        void onVpnRevoked();
+        void onAlwaysOnTriggered();
     }
 
 
@@ -503,6 +513,13 @@ public final class GoBackend implements Backend {
         }
 
         @Override
+        public void onRevoke() {
+            if (lifecycleCallback != null)
+                lifecycleCallback.onVpnRevoked();
+            super.onRevoke();
+        }
+
+        @Override
         public void onDestroy() {
             if (owner != null) {
                 final Tunnel tunnel = owner.currentTunnel;
@@ -526,6 +543,8 @@ public final class GoBackend implements Backend {
                 Log.d(TAG, "Service started by Always-on VPN feature");
                 if (alwaysOnCallback != null)
                     alwaysOnCallback.alwaysOnTriggered();
+                if (lifecycleCallback != null && (intent == null || intent.getComponent() == null || !intent.getComponent().getPackageName().equals(getPackageName())))
+                    lifecycleCallback.onAlwaysOnTriggered();
             }
             return super.onStartCommand(intent, flags, startId);
         }

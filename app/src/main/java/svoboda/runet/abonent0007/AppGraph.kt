@@ -3,6 +3,7 @@ package svoboda.runet.abonent0007
 import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.state.ConnectionStateRepository
 import svoboda.runet.abonent0007.split.SplitTunnelManager
@@ -12,6 +13,8 @@ import svoboda.runet.abonent0007.vpn.ConnectionManager
 import svoboda.runet.abonent0007.vpn.ProfileTestCoordinator
 import svoboda.runet.abonent0007.vpn.ReconnectCoordinator
 import svoboda.runet.abonent0007.vpn.VpnController
+import svoboda.runet.abonent0007.vpn.VpnLifecycleCallback
+import org.amnezia.awg.backend.GoBackend
 import svoboda.runet.abonent0007.warp.BundledSeed
 import svoboda.runet.abonent0007.warp.GeneratedProfileStore
 import svoboda.runet.abonent0007.warp.SeedCatalog
@@ -55,6 +58,14 @@ class SvobodaApp : Application() {
             autoConnect = { AppGraph.manager.connectLastKnown() },
             disconnectAction = { AppGraph.vpn.disconnect() },
         )
+        GoBackend.setLifecycleCallback(VpnLifecycleCallback(AppGraph.connectionState))
+        GoBackend.setAlwaysOnCallback(object : GoBackend.AlwaysOnCallback {
+            override fun alwaysOnTriggered() {
+                AppGraph.appScope.launch {
+                    if (AppGraph.prefs.autoConnect) AppGraph.reconnect.userConnect(false)
+                }
+            }
+        })
         AppGraph.profileTester = ProfileTestCoordinator(
             controller = AppGraph.vpn,
             reconnect = AppGraph.reconnect,
