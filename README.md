@@ -9,11 +9,11 @@ Android no-root VPN-клиент на **AmneziaWG / WARP** с per-app split-tunn
 
 | Главный экран (подключено) | Меню — общие настройки |
 |---|---|
-| ![Главный экран](./docs/shots/release_main.png) | ![Меню](./docs/shots/release_drawer.png) |
+| <img src="docs/shots/release_main.png" width="270" alt="Главный экран" /> | <img src="docs/shots/release_drawer.png" width="270" alt="Меню" /> |
 
 MTU: слайдер 1200–1480 и быстрые пресеты 1380–1480 с шагом 20:
 
-![MTU](./docs/shots/release_mtu.png)
+<img src="docs/shots/release_mtu.png" width="270" alt="MTU" />
 
 ## Возможности
 
