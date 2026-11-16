@@ -51,6 +51,22 @@ held until engine stop.
 - **Fallback:** strict stop → start sequence (AWG/WARP stops, DPI starts; reverse on exit).
   Simpler, but loses session state and shows a visible reconnect delay.
 
+## 2.5. Native build results (DPI-1.2B, host-side)
+
+| Artifact | ABI | Result |
+|----------|-----|--------|
+| `third_party/hev-socks5-tunnel/libs/arm64-v8a/libhev-socks5-tunnel.so` | arm64-v8a | ✅ 342 KB, ELF64 AArch64, LOAD align `0x4000` |
+| `third_party/hev-socks5-tunnel/libs/x86_64/libhev-socks5-tunnel.so` | x86_64 | ✅ 343 KB, ELF64 x86-64, LOAD align `0x4000` |
+| `third_party/byedpi/dist/arm64-v8a/libbyedpi.so` | arm64-v8a | ✅ PIE executable (ciadpi 17.3) |
+| `third_party/byedpi/dist/x86_64/libbyedpi.so` | x86_64 | ✅ PIE executable (ciadpi 17.3) |
+
+- HEV собран `ndk-build` с `APP_PLATFORM=android-26` (совместим с minSdk 26), экспортирует
+  `hev_socks5_tunnel_main_from_str` и `hev_socks5_tunnel_quit`, зависимости — `libc/libm/libdl`.
+- ByeDPI собирается как **исполняемый** файл с именем `libbyedpi.so` (запуск отдельным процессом,
+  остановка `destroy()`), как в Nova/ByeByeDPI.
+- Обнаружено и исправлено: GitHub-архивы хранят симлинки как текстовые файлы; 31 заголовок
+  материализован скриптом `scripts/fix_symlinks.ps1` (иначе HEV не собирается).
+
 ## 3. Native build bootstrap — next actions
 
 1. Author Svoboda-owned JNI wrapper for ciadpi (argv array, no shell string).
