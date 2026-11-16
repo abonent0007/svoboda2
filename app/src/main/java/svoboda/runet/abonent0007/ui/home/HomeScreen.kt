@@ -68,6 +68,7 @@ import svoboda.runet.abonent0007.ui.theme.Elevated
 import svoboda.runet.abonent0007.ui.theme.ErrorRed
 import svoboda.runet.abonent0007.ui.theme.GoodGreen
 import svoboda.runet.abonent0007.ui.method.MethodSettingsDialog
+import svoboda.runet.abonent0007.ui.split.RussianDirectDialog
 import svoboda.runet.abonent0007.ui.theme.TextPrimary
 import svoboda.runet.abonent0007.ui.theme.TextSecondary
 import svoboda.runet.abonent0007.vpn.VpnPhase
@@ -152,6 +153,9 @@ fun HomeScreen(
 
     // Открытое подменю тонких настроек метода (null = закрыто).
     var methodSettingsFor by remember { mutableStateOf<ConnectionMethod?>(null) }
+
+    // Подменю «Российские приложения — напрямую».
+    var showRussianDirect by remember { mutableStateOf(false) }
     var dnsText by remember { mutableStateOf(prefs.dnsServers) }
     var showDnsDialog by remember { mutableStateOf(false) }
 
@@ -183,6 +187,7 @@ fun HomeScreen(
                     prefs.autoUpdateEnabled = it
                 },
                 onOpenMethodSettings = { methodSettingsFor = it },
+                onOpenRussianDirect = { showRussianDirect = true },
                 onGraphEnabled = {
                     graphEnabled = it
                     prefs.pingGraphEnabled = it
@@ -462,6 +467,13 @@ fun HomeScreen(
         )
     }
 
+    if (showRussianDirect) {
+        RussianDirectDialog(
+            profileId = splitProfileId,
+            onDismiss = { showRussianDirect = false },
+        )
+    }
+
     methodSettingsFor?.let { method ->
         MethodSettingsDialog(
             method = method,
@@ -496,6 +508,7 @@ private fun DrawerContent(
     autoUpdate: Boolean,
     onAutoUpdate: (Boolean) -> Unit,
     onOpenMethodSettings: (ConnectionMethod) -> Unit,
+    onOpenRussianDirect: () -> Unit,
     onGraphEnabled: (Boolean) -> Unit,
     onIntervalSec: (Int) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
@@ -637,6 +650,13 @@ private fun DrawerContent(
                 AppGraph.splitManager.update(splitProfileId, cfg)
                 if (AppGraph.vpn.isConnected) scope.launch { AppGraph.reconnect.userConnect(false) }
             },
+        )
+
+        TileRow(
+            title = "Российские приложения — напрямую",
+            value = "банки, госуслуги, веб-ресурсы (direct)",
+            opaque = true,
+            onClick = onOpenRussianDirect,
         )
 
         TileRow(

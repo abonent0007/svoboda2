@@ -66,6 +66,10 @@ held until engine stop.
   остановка `destroy()`), как в Nova/ByeByeDPI.
 - Обнаружено и исправлено: GitHub-архивы хранят симлинки как текстовые файлы; 31 заголовок
   материализован скриптом `scripts/fix_symlinks.ps1` (иначе HEV не собирается).
+- **Проверка парсера BDP-00 (host-сборка ciadpi 17.3):**
+  - `--version` → `17.3` (совпадает с закреплённой версией);
+  - неизвестный флаг `-Z` → отказ (exit -1);
+  - BDP-00 целиком принят, процесс жив, SOCKS5 слушает порт 1080 (`Get-NetTCPConnection`: 1 listener).
 
 ## 3. Native build bootstrap — next actions
 

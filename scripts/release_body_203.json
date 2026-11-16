@@ -1,0 +1,8 @@
+{
+  "tag_name": "v2.0.3",
+  "target_commitish": "main",
+  "name": "Свобода 2.0 — v2.0.3",
+  "body": "**Новое**\n- Подменю тонких настроек для каждого из 4 методов подключения:\n  - **AWG** — серверы, MTU, **генератор .conf** (ключи Curve25519 создаются на устройстве)\n  - **WARP** — перерегистрация identity через Cloudflare API, endpoint, MTU\n  - **DPI** — каталог стратегий BDP-00…BDP-12, SOCKS-порт, **сборщик стратегии** ciadpi\n  - **AUTO** — предпочтительный транспорт и резервное переключение\n- **Foreground Service по-настоящему**: канал уведомлений, постоянное уведомление, `startForeground(systemExempted)` на API 34+, `stopForeground` при остановке, обработка отказа FGS\n- **DPI-1.2B**: собраны `libhev-socks5-tunnel.so` (arm64-v8a, x86_64, 16 KB alignment, API 26) и исполняемые `libbyedpi.so` (ciadpi 17.3); BDP-00 принят парсером, SOCKS5 слушает порт\n\n**Исправления**\n- Автообновление: fallback через `github.com` при 403 rate limit\n- Backoff ограничен 60 с, корректное отображение ping, статус реконнекта очищается\n\n![Главный экран](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_main.png)\n\n![Меню](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_drawer.png)\n\n![MTU](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_mtu.png)",
+  "draft": false,
+  "prerelease": false
+}
