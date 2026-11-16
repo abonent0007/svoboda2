@@ -1,0 +1,8 @@
+{
+  "tag_name": "v2.0.2",
+  "target_commitish": "main",
+  "name": "Свобода 2.0 — v2.0.2",
+  "body": "**Автообновление стало устойчивым**\n- Основной источник — GitHub API; при 403 (rate limit общего IP WARP) включается fallback через `github.com/releases/latest` (302 → тег)\n- Ассет с фиксированным именем `svoboda2-latest-universal.apk` для скачивания без API\n- `User-Agent` для API и загрузки, числовое сравнение версий, откат не предлагается\n\n**Прочее**\n- MTU по умолчанию 1420, слайдер до 1480, пресеты 1380–1480\n- «Способ подключения» над кнопками; «Подключить» и «Проверить связь» в одну линию\n- Backoff ограничен 60 с; исправлено «-1 мс»; авто-reconnect перерегистрирует WARP\n\n![Главный экран](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_main.png)\n\n![Меню](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_drawer.png)\n\n![MTU](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_mtu.png)",
+  "draft": false,
+  "prerelease": false
+}

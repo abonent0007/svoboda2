@@ -20,8 +20,16 @@ object Updater {
         val publishedAt: String,
     )
 
-    private const val LATEST_URL =
-        "https://api.github.com/repos/abonent0007/svoboda2/releases/latest"
+    private const val REPO = "abonent0007/svoboda2"
+
+    /** Основной источник: GitHub API. Может отдавать 403 (rate limit) при выходе через WARP. */
+    private const val LATEST_URL = "https://api.github.com/repos/$REPO/releases/latest"
+
+    /** Fallback без API: редирект страницы latest на тег + ассет с фиксированным именем. */
+    private const val LATEST_PAGE = "https://github.com/$REPO/releases/latest"
+    private const val LATEST_APK =
+        "https://github.com/$REPO/releases/latest/download/svoboda2-latest-universal.apk"
+    private const val UA = "Svoboda2-Updater"
 
     /** Числовое сравнение версий "2.0.10" > "2.0.9". Нечисловые суффиксы игнорируются. */
     private fun isNewer(remote: String, current: String): Boolean {
@@ -36,12 +44,36 @@ object Updater {
         return false
     }
 
-    /** Возвращает новый релиз, если его версия отличается от текущей. */
+    /** Возвращает новый релиз, только если он новее установленного. */
     suspend fun checkLatest(): Release? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        runCatching {
+        apiLatest() ?: redirectLatest()
+    }
+
+    /**
+     * Fallback без GitHub API: `/releases/latest` отвечает 302 на `/releases/tag/<tag>`.
+     * Нужен, когда API отдаёт 403 из-за rate limit (общий IP Cloudflare WARP).
+     */
+    private fun redirectLatest(): Release? = runCatching {
+        val conn = (URL(LATEST_PAGE).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            instanceFollowRedirects = false
+            setRequestProperty("User-Agent", UA)
+            connectTimeout = 20_000
+            readTimeout = 20_000
+        }
+        val code = conn.responseCode
+        val location = conn.getHeaderField("Location").orEmpty()
+        if (code !in 300..399) return@runCatching null
+        val tag = Regex("/tag/v?([0-9][^/?#]*)").find(location)?.groupValues?.get(1).orEmpty()
+        if (tag.isBlank() || !isNewer(tag, BuildConfig.VERSION_NAME)) return@runCatching null
+        Release(tag, LATEST_APK, "svoboda2-latest-universal.apk", "")
+    }.getOrNull()
+
+    private fun apiLatest(): Release? = runCatching {
             val conn = (URL(LATEST_URL).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", UA)
                 connectTimeout = 20_000
                 readTimeout = 20_000
             }
@@ -64,8 +96,7 @@ object Updater {
             }
             if (apkUrl.isNullOrBlank()) return@runCatching null
             Release(tag, apkUrl, apkName!!, json.optString("published_at"))
-        }.getOrNull()
-    }
+    }.getOrNull()
 
     /** Загружает APK во внешний каталог приложения; возвращает файл. */
     suspend fun download(
@@ -77,6 +108,8 @@ object Updater {
             val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.cacheDir
             val file = File(dir, "svoboda2-update.apk")
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                setRequestProperty("User-Agent", UA)
+                instanceFollowRedirects = true
                 connectTimeout = 20_000
                 readTimeout = 60_000
             }

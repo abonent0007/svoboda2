@@ -36,3 +36,7 @@ third_party/**/build/
 # Local publish helpers (read OS credential store)
 scripts/gh_*.ps1
 
+
+# Local APK snapshots for upgrade tests
+dist/
+
