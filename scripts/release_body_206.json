@@ -1,0 +1,8 @@
+{
+  "tag_name": "v2.0.6",
+  "target_commitish": "main",
+  "name": "Свобода 2.0 — v2.0.6",
+  "body": "**Диагностика связи по GPT-ревью**\n- Handshake успешен, но интернет не подтверждён — туннель НЕ гасится: новая фаза **DEGRADED**, до 3 HTTPS-попыток (0 с / 2 с / 5 с)\n- Health-монитор: после 2 неуспешных проверок фаза DEGRADED, туннель сохраняется; после восстановления — обратно в CONNECTED\n- UI: DEGRADED показывает «НЕТ ИНТЕРНЕТА» (янтарный) вместо ошибки; пинг продолжает опрашивать туннель\n\n**На устройстве проверено**\n- `run-as … split_tunnel.json` — 20 пакетов сохраняются/восстанавливаются без потерь\n- Handshake + HTTPS-proof, ping на графике\n\n![Главный экран](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_main.png)",
+  "draft": false,
+  "prerelease": false
+}

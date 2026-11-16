@@ -13,8 +13,8 @@ android {
         applicationId = "svoboda.runet.abonent0007"
         minSdk = 26
         targetSdk = 35
-        versionCode = 205
-        versionName = "2.0.5"
+        versionCode = 206
+        versionName = "2.0.6"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
