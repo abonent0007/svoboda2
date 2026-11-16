@@ -85,6 +85,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Автообновление: тихая проверка GitHub Releases при запуске.
+            LaunchedEffect(Unit) {
+                if (!AppGraph.prefs.autoUpdateEnabled) return@LaunchedEffect
+                kotlinx.coroutines.delay(5_000) // не мешаем первому кадру и автоподключению
+                val rel = Updater.checkLatest() ?: return@LaunchedEffect
+                controller.setStatus("Обновление ${rel.versionName}: загрузка…")
+                val file = Updater.download(this@MainActivity, rel.apkUrl) { p ->
+                    controller.setStatus("Обновление ${rel.versionName}: $p%")
+                }
+                if (file == null) {
+                    controller.setStatus("Не удалось скачать обновление")
+                    return@LaunchedEffect
+                }
+                controller.setStatus("Обновление ${rel.versionName}: установка…")
+                startActivity(Updater.installIntent(this@MainActivity, file))
+            }
+
             SvobodaTheme {
                 HomeScreen(
                     phase = phase,

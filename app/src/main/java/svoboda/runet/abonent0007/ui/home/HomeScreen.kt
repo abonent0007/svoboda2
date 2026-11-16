@@ -136,6 +136,7 @@ fun HomeScreen(
     var graphEnabled by remember { mutableStateOf(prefs.pingGraphEnabled) }
     var intervalSec by remember { mutableStateOf(prefs.pingIntervalMs / 1000) }
     var autoConnect by remember { mutableStateOf(prefs.autoConnect) }
+    var autoUpdate by remember { mutableStateOf(prefs.autoUpdateEnabled) }
     var mtu by remember { mutableStateOf(prefs.tunnelMtu) }
 
     var ipv6Enabled by remember { mutableStateOf(prefs.ipv6Enabled) }
@@ -171,6 +172,11 @@ fun HomeScreen(
                         connectionMethod = it
                         prefs.connectionMethod = it.name
                     }
+                },
+                autoUpdate = autoUpdate,
+                onAutoUpdate = {
+                    autoUpdate = it
+                    prefs.autoUpdateEnabled = it
                 },
                 onGraphEnabled = {
                     graphEnabled = it
@@ -466,6 +472,8 @@ private fun DrawerContent(
     splitProfileId: String,
     connectionMethod: ConnectionMethod,
     onConnectionMethod: (ConnectionMethod) -> Unit,
+    autoUpdate: Boolean,
+    onAutoUpdate: (Boolean) -> Unit,
     onGraphEnabled: (Boolean) -> Unit,
     onIntervalSec: (Int) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
@@ -535,6 +543,13 @@ private fun DrawerContent(
             value = if (autoConnect) "включено" else "выключено",
             opaque = true,
             control = { NeonSwitch(autoConnect, onAutoConnect) },
+        )
+
+        TileRow(
+            title = "Автообновление",
+            value = if (autoUpdate) "проверять при запуске" else "выключено",
+            opaque = true,
+            control = { NeonSwitch(autoUpdate, onAutoUpdate) },
         )
 
         SectionHeader("ПОДКЛЮЧЕНИЕ")

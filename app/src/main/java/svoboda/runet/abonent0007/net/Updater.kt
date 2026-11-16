@@ -23,6 +23,19 @@ object Updater {
     private const val LATEST_URL =
         "https://api.github.com/repos/abonent0007/svoboda2/releases/latest"
 
+    /** Числовое сравнение версий "2.0.10" > "2.0.9". Нечисловые суффиксы игнорируются. */
+    private fun isNewer(remote: String, current: String): Boolean {
+        val r = remote.split('.', '-', '+').mapNotNull { it.toIntOrNull() }
+        val c = current.split('.', '-', '+').mapNotNull { it.toIntOrNull() }
+        if (r.isEmpty()) return false
+        for (i in 0 until maxOf(r.size, c.size)) {
+            val rv = r.getOrElse(i) { 0 }
+            val cv = c.getOrElse(i) { 0 }
+            if (rv != cv) return rv > cv
+        }
+        return false
+    }
+
     /** Возвращает новый релиз, если его версия отличается от текущей. */
     suspend fun checkLatest(): Release? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         runCatching {
@@ -35,7 +48,8 @@ object Updater {
             if (conn.responseCode != 200) return@runCatching null
             val json = org.json.JSONObject(conn.inputStream.bufferedReader().readText())
             val tag = json.optString("tag_name").trim().removePrefix("v")
-            if (tag.isBlank() || tag == BuildConfig.VERSION_NAME) return@runCatching null
+            // Сравниваем версии численно: v2.0.10 новее v2.0.9; откат не предлагаем.
+            if (tag.isBlank() || !isNewer(tag, BuildConfig.VERSION_NAME)) return@runCatching null
             val assets = json.optJSONArray("assets") ?: return@runCatching null
             var apkUrl: String? = null
             var apkName: String? = null

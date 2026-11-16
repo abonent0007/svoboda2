@@ -86,4 +86,12 @@ class Prefs(context: Context) {
     var connectionMethod: String
         get() = prefs.getString("connection_method", "AWG").orEmpty()
         set(value) = prefs.edit().putString("connection_method", value).apply()
+
+    /**
+     * Автообновление: при старте проверять GitHub Releases, скачивать APK
+     * и передавать его системному установщику.
+     */
+    var autoUpdateEnabled: Boolean
+        get() = prefs.getBoolean("auto_update_enabled", true)
+        set(value) = prefs.edit().putBoolean("auto_update_enabled", value).apply()
 }
