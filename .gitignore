@@ -1,4 +1,4 @@
-# Gradle
+﻿# Gradle
 .gradle/
 build/
 app/build/
@@ -38,5 +38,5 @@ scripts/gh_*.ps1
 
 
 # Local APK snapshots for upgrade tests
-dist/
+/dist/
 
