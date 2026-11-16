@@ -25,6 +25,51 @@ object WarpGenerator {
     const val CF_CLIENT_VERSION = "a-6.30-3596"
     const val MTU = 1420
 
+    /** Пресеты DNS для генерируемых конфигов. */
+    const val DNS_CLOUDFLARE = "1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001"
+    const val DNS_GOOGLE = "8.8.8.8, 8.8.4.4, 2001:4860:4860::8888, 2001:4860:4860::8844"
+    const val DNS_QUAD9 = "9.9.9.9, 149.112.112.112, 2620:fe::fe, 2620:fe::9"
+    const val DNS_NONE = ""
+
+    /**
+     * Пресеты DNS: id → (название, тип, значение).
+     * Тип "ip" — готовые адреса; "host" — домен резолвера (разрешается в IP при генерации);
+     * "none" — без DNS (адреса берёт система).
+     */
+    data class DnsPreset(val id: String, val title: String, val kind: String, val value: String)
+
+    val DNS_PRESETS: List<DnsPreset> = listOf(
+        DnsPreset("cloudflare", "Cloudflare (1.1.1.1)", "ip", DNS_CLOUDFLARE),
+        DnsPreset("google", "Google (8.8.8.8)", "ip", DNS_GOOGLE),
+        DnsPreset("quad9", "Quad9 (9.9.9.9)", "ip", DNS_QUAD9),
+        DnsPreset("malw", "Антиблок dns.malw.link", "host", "dns.malw.link"),
+        DnsPreset("bezmezhau", "Антиблок bezmezhau.com", "host", "bezmezhau.com"),
+        DnsPreset("geohide", "Антиблок geohide.ru", "host", "geohide.ru"),
+        DnsPreset("geodema", "Антиблок dns.geodema.love", "host", "dns.geodema.love"),
+        DnsPreset("none", "Без DNS (системный)", "none", DNS_NONE),
+    )
+
+    fun dnsPreset(id: String): DnsPreset = DNS_PRESETS.firstOrNull { it.id == id } ?: DNS_PRESETS.first()
+
+    /**
+     * Готовая строка "DNS = ..." для конфига.
+     * Для антиблок-резолверов домен разрешается в IP: WireGuard/AmneziaWG принимает только адреса.
+     */
+    fun resolveDns(presetId: String): String {
+        val preset = dnsPreset(presetId)
+        return when (preset.kind) {
+            "none" -> ""
+            "host" -> runCatching {
+                InetAddress.getAllByName(preset.value)
+                    .map { it.hostAddress }
+                    .filter { it.contains(':') || it.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) }
+                    .distinct()
+                    .joinToString(", ")
+            }.getOrNull()?.takeIf { it.isNotBlank() } ?: DNS_CLOUDFLARE
+            else -> preset.value
+        }
+    }
+
     private val REG_IPS: List<InetAddress> = listOf(
         InetAddress.getByName("104.16.24.84"),
         InetAddress.getByName("104.16.192.82"),
@@ -116,6 +161,8 @@ object WarpGenerator {
         jmin: Int = 54,
         jmax: Int = 76,
         i1: String = "",
+        dns: String = DNS_CLOUDFLARE,
+        allowedIps: String? = null,
     ): String = buildString {
         appendLine("[Interface]")
         appendLine("PrivateKey = ${identity.privateKey}")
@@ -124,7 +171,7 @@ object WarpGenerator {
             identity.ipv6.takeIf { it.isNotBlank() }?.let { add("$it/128") }
         }
         appendLine("Address = ${addresses.joinToString(", ")}")
-        appendLine("DNS = 1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001")
+        if (dns.isNotBlank()) appendLine("DNS = $dns")
         appendLine("MTU = $MTU")
         appendLine("S1 = 0")
         appendLine("S2 = 0")
@@ -141,7 +188,7 @@ object WarpGenerator {
         appendLine()
         appendLine("[Peer]")
         appendLine("PublicKey = ${identity.peerPublicKey}")
-        appendLine("AllowedIPs = 0.0.0.0/0, ::/0")
+        appendLine("AllowedIPs = ${allowedIps ?: "0.0.0.0/0, ::/0"}")
         appendLine("Endpoint = $endpointHost:$port")
     }
 }

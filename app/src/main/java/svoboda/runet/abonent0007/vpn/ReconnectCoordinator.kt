@@ -125,6 +125,9 @@ class ReconnectCoordinator(
     }
 
     private fun checkTunnel(): Boolean {
+        // Во время бенчмарка стратегий health-проверка не должна вмешиваться:
+        // ciadpi перезапускается, и контрольный SOCKS-проб был бы ложным сигналом.
+        if (testingMode) return true
         return runBlocking {
             // DPI-режим: рукопожатия нет; здоровье проверяем через локальный SOCKS5 (ciadpi).
             controller.dpiProbePort?.let { port ->

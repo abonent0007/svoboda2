@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.split.SplitTunnelManager
 import svoboda.runet.abonent0007.net.NetProbe
+import svoboda.runet.abonent0007.warp.ServiceIpRanges
 import svoboda.runet.abonent0007.dpi.dpiStrategyById
 import svoboda.runet.abonent0007.dpi.DPI_DEFAULT_STRATEGY_ID
 import svoboda.runet.abonent0007.vpn.VpnController
@@ -93,7 +94,7 @@ class DpiEngine(
         return false
     }
 
-    private fun startCiadpi(): Boolean {
+    private fun startCiadpi(argsOverride: Array<String>? = null): Boolean {
         val port = prefs.dpiSocksPort.coerceIn(1, 65535)
         val binary = java.io.File(context.applicationInfo.nativeLibraryDir, "libbyedpi.so")
         if (!binary.exists()) {
@@ -101,7 +102,7 @@ class DpiEngine(
             return false
         }
         val args = buildList {
-            addAll(strategyArgs())
+            addAll(argsOverride ?: strategyArgs())
             add("-p"); add(port.toString())
         }
         Log.d(TAG, "starting ciadpi: ${binary.absolutePath} ${args.joinToString(" ")}")
@@ -146,7 +147,9 @@ class DpiEngine(
 
         // 2. TUN через GoBackend в DPI-режиме (handoff fd → HEV внутри VpnController/GoBackend)
         val split = splitManager.resolve(vpn.currentProfileId.ifBlank { "warp" })
-        val config = DpiConfig.build(prefs, split)
+        val scope = prefs.tunnelServiceScope
+        val allowedIps = ServiceIpRanges.allowedIps(context, scope)
+        val config = DpiConfig.build(prefs, split, scope, allowedIps)
         val ok = vpn.connectDpi(config)
         if (!ok) {
             Log.e(TAG, "DPI engine: TUN bring-up failed")
@@ -186,4 +189,38 @@ class DpiEngine(
     }
 
     fun isRunning(): Boolean = started && ciadpiProcess?.isAlive == true && HevBridge.nativeIsRunning()
+
+    /**
+     * Перезапуск ТОЛЬКО ciadpi с заданной стратегией (Android VPNService и HEV не трогаем).
+     * Используется бенчмарком стратегий: смена стратегии не должна рвать VPN.
+     */
+    suspend fun restartWithStrategy(strategyId: String): Boolean {
+        val strategy = dpiStrategyById(strategyId) ?: return false
+        stopCiadpi()
+        Thread.sleep(400)
+        val ok = startCiadpi(strategy.args.split(' ').filter { it.isNotBlank() }.toTypedArray())
+        Log.d(TAG, "restartWithStrategy($strategyId) -> $ok")
+        return ok
+    }
+
+    /** Перезапуск ciadpi с текущей конфигурацией (пользовательская строка приоритетнее каталога). */
+    suspend fun restartWithCurrentStrategy(): Boolean {
+        stopCiadpi()
+        Thread.sleep(400)
+        return startCiadpi()
+    }
+
+    /** Готовность локального SOCKS5 (порт принимает соединения). */
+    fun isSocksReady(): Boolean {
+        val port = prefs.dpiSocksPort.coerceIn(1, 65535)
+        if (ciadpiProcess?.isAlive != true) return false
+        return try {
+            java.net.Socket().use { s ->
+                s.connect(java.net.InetSocketAddress("127.0.0.1", port), 500)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
 }

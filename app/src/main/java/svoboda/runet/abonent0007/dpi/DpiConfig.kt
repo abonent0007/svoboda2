@@ -21,7 +21,12 @@ object DpiConfig {
 
     private const val OWN_PACKAGE = "svoboda.runet.abonent0007"
 
-    fun build(prefs: Prefs, split: SplitTunnelConfig): String {
+    fun build(
+        prefs: Prefs,
+        split: SplitTunnelConfig,
+        serviceScope: Set<String> = emptySet(),
+        allowedIpsOverride: String? = null,
+    ): String {
         val mtu = prefs.tunnelMtu.coerceIn(1200, 1480)
         val dns = if (prefs.dpiMapDns) "198.18.0.2" else prefs.dnsServers.ifBlank { "1.1.1.1, 1.0.0.1" }
 
@@ -53,7 +58,7 @@ object DpiConfig {
             appendLine()
             appendLine("[Peer]")
             appendLine("PublicKey = $DUMMY_KEY")
-            appendLine("AllowedIPs = 0.0.0.0/0")
+            appendLine("AllowedIPs = ${allowedIpsOverride ?: "0.0.0.0/0"}")
         }
     }
 }

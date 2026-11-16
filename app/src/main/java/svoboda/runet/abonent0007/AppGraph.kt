@@ -28,15 +28,19 @@ object AppGraph {
     lateinit var profileTester: ProfileTestCoordinator
     lateinit var prefs: Prefs
     lateinit var dpi: svoboda.runet.abonent0007.dpi.DpiEngine
+    lateinit var dpiBenchmarkStore: svoboda.runet.abonent0007.dpi.benchmark.DpiBenchmarkStore
+    lateinit var dpiBenchmark: svoboda.runet.abonent0007.dpi.benchmark.DpiBenchmarkManager
     lateinit var seeds: List<BundledSeed>
     lateinit var servers: OwnServerStore
     lateinit var splitManager: SplitTunnelManager
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob())
+    lateinit var appContext: android.content.Context
 }
 
 class SvobodaApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        AppGraph.appContext = this
         AppGraph.prefs = Prefs(this)
         AppGraph.connectionState = ConnectionStateRepository()
         AppGraph.vpn = VpnController(this, AppGraph.prefs, AppGraph.connectionState)
@@ -66,6 +70,16 @@ class SvobodaApp : Application() {
             vpn = AppGraph.vpn,
         )
         AppGraph.vpn.onDpiDisconnect = { AppGraph.dpi.stopProcess() }
+
+        AppGraph.dpiBenchmarkStore = svoboda.runet.abonent0007.dpi.benchmark.DpiBenchmarkStore(this)
+        AppGraph.dpiBenchmark = svoboda.runet.abonent0007.dpi.benchmark.DpiBenchmarkManager(
+            context = this,
+            prefs = AppGraph.prefs,
+            engine = AppGraph.dpi,
+            store = AppGraph.dpiBenchmarkStore,
+            scope = AppGraph.appScope,
+            onTestingModeChanged = { active -> AppGraph.reconnect.testingMode = active },
+        )
         GoBackend.setLifecycleCallback(VpnLifecycleCallback(AppGraph.connectionState))
         GoBackend.setAlwaysOnCallback(object : GoBackend.AlwaysOnCallback {
             override fun alwaysOnTriggered() {

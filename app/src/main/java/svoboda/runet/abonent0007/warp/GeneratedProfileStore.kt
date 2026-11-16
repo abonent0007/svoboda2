@@ -10,7 +10,7 @@ class GeneratedProfileStore(context: Context) {
 
     companion object {
         private const val FILE_NAME = "generated_profiles.json"
-        private const val MAX_ENTRIES = 30
+        private const val MAX_ENTRIES = 60
     }
 
     private val file = File(context.applicationContext.filesDir, FILE_NAME)
@@ -47,6 +47,26 @@ class GeneratedProfileStore(context: Context) {
             val enc = SecureConfigStorage.encrypt(profile.config) ?: profile.configEncrypted
             val withEnc = profile.copy(configEncrypted = enc, config = profile.config)
             val updated = (list() + withEnc).takeLast(MAX_ENTRIES)
+            saveEncrypted(updated)
+        }
+    }
+
+    /** Удалить конкретный профиль (по времени создания и endpoint'у). */
+    fun remove(profile: GeneratedProfile) {
+        runCatching {
+            val updated = list().filterNot { it.createdAt == profile.createdAt && it.host == profile.host && it.port == profile.port }
+            saveEncrypted(updated)
+        }
+    }
+
+    /** Зафиксировать измеренную страну выхода профиля. */
+    fun updateCountry(profile: GeneratedProfile, country: String, checkedAt: Long) {
+        runCatching {
+            val updated = list().map {
+                if (it.createdAt == profile.createdAt && it.host == profile.host && it.port == profile.port) {
+                    it.copy(observedCountry = country, countryCheckedAt = checkedAt)
+                } else it
+            }
             saveEncrypted(updated)
         }
     }

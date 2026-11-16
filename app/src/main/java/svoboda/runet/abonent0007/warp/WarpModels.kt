@@ -33,6 +33,9 @@ data class GeneratedProfile(
     val port: Int = 0,
     val config: String = "",
     val configEncrypted: String = "",
+    /** Фактически измеренная страна выхода (ISO-код), напр. "NL". Пусто — не измерено. */
+    val observedCountry: String = "",
+    val countryCheckedAt: Long = 0L,
 )
 
 /** Результат регистрации WARP-устройства в Cloudflare. */

@@ -11,6 +11,10 @@ import svoboda.runet.abonent0007.warp.BundledSeed
 import svoboda.runet.abonent0007.warp.GeneratedProfile
 import svoboda.runet.abonent0007.warp.GeneratedProfileStore
 import svoboda.runet.abonent0007.warp.SeedCatalog
+import svoboda.runet.abonent0007.net.NetProbe
+import svoboda.runet.abonent0007.split.ServiceCatalog
+import svoboda.runet.abonent0007.split.SplitTunnelConfig
+import svoboda.runet.abonent0007.split.SplitTunnelMode
 import svoboda.runet.abonent0007.warp.WarpGenerator
 
 /**
@@ -78,6 +82,9 @@ class ConnectionManager(
 
     /** Ручное подключение: свой сервер, иначе новый WARP-профиль. */
     suspend fun connectManual(): Boolean {
+        if (prefs.connectionMethod == "AUTO") {
+            return autoConnect()
+        }
         if (prefs.connectionMethod == "DPI_DIRECT") {
             controller.currentProfileId = "dpi"
             _profileLabel.value = if (prefs.dpiCustomStrategy.isNotBlank()) "DPI · пользовательская" else "DPI · ${prefs.dpiStrategyId}"
@@ -95,6 +102,7 @@ class ConnectionManager(
 
     private suspend fun connectWarpWithGeneration(): Boolean {
         controller.currentProfileId = "warp"
+        applyServiceDirect("warp")
         // Jc/Jmin/Jmax и I1 берём из проверенного профиля №11: та же
         // обфускация, что уже проходит DPI.
         val seedForParams = SeedCatalog.defaultSeed(seeds)
@@ -150,6 +158,9 @@ class ConnectionManager(
 
     /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг. */
     suspend fun connectLastKnown(): Boolean {
+        if (prefs.connectionMethod == "AUTO") {
+            return autoConnect()
+        }
         if (prefs.connectionMethod == "DPI_DIRECT") {
             controller.currentProfileId = "dpi"
             _profileLabel.value = if (prefs.dpiCustomStrategy.isNotBlank()) "DPI · пользовательская" else "DPI · " + prefs.dpiStrategyId
@@ -206,6 +217,135 @@ class ConnectionManager(
         controller.disconnect()
         val config = lastGoodConfig ?: SeedCatalog.defaultSeed(seeds)?.raw_config ?: return false
         return controller.connect(config)
+    }
+
+    /**
+     * Раздельное туннелирование: выбранные сервисы (YouTube/Telegram/...) идут мимо туннеля.
+     * Применяется к конкретному профилю (у каждого WARP-профиля свой набор).
+     */
+    private fun applyServiceDirect(profileId: String) {
+        val ids = prefs.serviceDirectSelection
+        if (ids.isEmpty()) return
+        val packages = ServiceCatalog.packagesFor(AppGraph.appContext, ids) + ServiceCatalog.fallbackPackages(ids)
+        if (packages.isEmpty()) return
+        AppGraph.splitManager.update(
+            profileId,
+            SplitTunnelConfig(
+                profileId = profileId,
+                mode = SplitTunnelMode.ALL_EXCEPT_SELECTED,
+                packageNames = packages,
+                presetId = "services_direct",
+            ),
+        )
+    }
+
+    /** Подключиться к конкретному сгенерированному WARP-профилю. */
+    suspend fun connectGeneratedProfile(profile: svoboda.runet.abonent0007.warp.GeneratedProfile): Boolean {
+        controller.disconnect()
+        controller.currentProfileId = "warp:${profile.host}:${profile.port}"
+        applyServiceDirect(controller.currentProfileId)
+        _profileLabel.value = "WARP · ${profile.host}:${profile.port}"
+        val ok = controller.connect(profile.config)
+        if (ok) {
+            rememberGood(profile.config)
+            // Фактическая страна выхода (для фильтра NL/FI/US) — измеряем, а не гадаем.
+            val exit = NetProbe.fetchExit()
+            if (exit != null && exit.country.isNotBlank()) {
+                store.updateCountry(profile, exit.country.uppercase(), System.currentTimeMillis())
+            }
+        }
+        return ok
+    }
+
+    /** AUTO v1: подбор транспорта по приоритету стран и порядку транспортов.
+     *  Переключение по foreground-приложению НЕ делаем (ломает активные сессии) —
+     *  выбираем один транспорт и держим его (антидребезг: autoHoldMinutes). */
+    suspend fun autoConnect(): Boolean {
+        val now = System.currentTimeMillis()
+        if (prefs.autoHoldMinutes > 0 && controller.isConnected &&
+            now - lastAutoSwitchAt < prefs.autoHoldMinutes * 60_000L
+        ) {
+            return true
+        }
+
+        val transports = prefs.autoTransportOrder.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+        val countries = prefs.autoCountryPriority.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+        val strict = prefs.autoCountryStrict
+
+        val candidates = mutableListOf<suspend () -> Boolean>()
+
+        transports.forEach { transport ->
+            when (transport) {
+                "AWG" -> {
+                    val servers = serverStore.list()
+                    countries.forEach { cc ->
+                        servers.filter { it.countryCode.trim().uppercase() == cc }.forEach { srv ->
+                            candidates += {
+                                controller.currentProfileId = srv.id
+                                _profileLabel.value = "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)"
+                                controller.connect(srv.resolvedConfig)
+                            }
+                        }
+                    }
+                    servers.forEach { srv ->
+                        candidates += {
+                            controller.currentProfileId = srv.id
+                            _profileLabel.value = "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)"
+                            controller.connect(srv.resolvedConfig)
+                        }
+                    }
+                }
+                "WARP" -> {
+                    val profiles = store.list()
+                    countries.forEach { cc ->
+                        profiles.filter { it.observedCountry.trim().uppercase() == cc }.forEach { prof ->
+                            candidates += { connectGeneratedProfile(prof) }
+                        }
+                    }
+                    candidates += { connectWarpWithGeneration() }
+                }
+                "DPI" -> {
+                    candidates += {
+                        controller.currentProfileId = "dpi"
+                        _profileLabel.value = "AUTO · DPI"
+                        AppGraph.dpi.start()
+                    }
+                }
+            }
+        }
+
+        if (strict && candidates.isEmpty()) {
+            _profileLabel.value = "AUTO · нет профиля нужной страны"
+            return false
+        }
+
+        for (candidate in candidates) {
+            if (candidate()) {
+                lastAutoSwitchAt = System.currentTimeMillis()
+                return true
+            }
+        }
+        return false
+    }
+
+    /** Время последнего автоматического переключения (антидребезг). */
+    private var lastAutoSwitchAt: Long = 0L
+
+    /** Сохранённые сгенерированные WARP-профили (новые сверху). */
+    fun generatedProfiles(): List<svoboda.runet.abonent0007.warp.GeneratedProfile> =
+        store.list().sortedByDescending { it.createdAt }
+
+    fun addGeneratedProfile(profile: svoboda.runet.abonent0007.warp.GeneratedProfile) {
+        store.add(profile)
+    }
+
+    fun clearGeneratedProfiles() {
+        store.clear()
+    }
+
+    /** Удалить сгенерированный профиль из хранилища. */
+    fun removeGeneratedProfile(profile: svoboda.runet.abonent0007.warp.GeneratedProfile) {
+        store.remove(profile)
     }
 
     fun resetLabel() {

@@ -110,6 +110,42 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("dpi_map_dns", false)
         set(value) = prefs.edit().putBoolean("dpi_map_dns", value).apply()
 
+    /** Выбранные домены для бенчмарка DPI (сохраняются между запусками). */
+    /** Сервисы, чей трафик заворачивается в туннель (раздельное туннелирование по маршрутам). */
+    var tunnelServiceScope: Set<String>
+        get() = prefs.getStringSet("tunnel_service_scope", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("tunnel_service_scope", value).apply()
+
+    /** AUTO: приоритет стран выхода (ISO-коды через запятую). */
+    var autoCountryPriority: String
+        get() = prefs.getString("auto_country_priority", "NL,FI,US") ?: "NL,FI,US"
+        set(value) = prefs.edit().putString("auto_country_priority", value).apply()
+
+    /** AUTO: порядок транспортов (AWG,WARP,DPI). */
+    var autoTransportOrder: String
+        get() = prefs.getString("auto_transport_order", "AWG,WARP,DPI") ?: "AWG,WARP,DPI"
+        set(value) = prefs.edit().putString("auto_transport_order", value).apply()
+
+    /** AUTO: строгая политика страны (не уходить в другие страны) или предпочтительная. */
+    var autoCountryStrict: Boolean
+        get() = prefs.getBoolean("auto_country_strict", false)
+        set(value) = prefs.edit().putBoolean("auto_country_strict", value).apply()
+
+    /** AUTO: минимальное время удержания выбранного транспорта, мин (антидребезг). */
+    var autoHoldMinutes: Int
+        get() = prefs.getInt("auto_hold_minutes", 5).coerceIn(0, 120)
+        set(value) = prefs.edit().putInt("auto_hold_minutes", value).apply()
+
+    /** Сервисы, которые направляются мимо туннеля (раздельное туннелирование, WARP). */
+    var serviceDirectSelection: Set<String>
+        get() = prefs.getStringSet("service_direct_selection", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("service_direct_selection", value).apply()
+
+    var dpiBenchmarkDomains: Set<String>
+        get() = prefs.getStringSet("dpi_benchmark_domains", null)
+            ?: svoboda.runet.abonent0007.dpi.benchmark.DpiDomainCatalog.defaultSelection
+        set(value) = prefs.edit().putStringSet("dpi_benchmark_domains", value).apply()
+
     /** Стратегия, собранная генератором (argv для ciadpi). */
     var dpiCustomStrategy: String
         get() = prefs.getString("dpi_custom_strategy", "").orEmpty()

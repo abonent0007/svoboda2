@@ -52,3 +52,7 @@ ui_*.xml
 
 # Byedpi build output (vendored sources stay; objects are rebuilt)
 third_party/byedpi/dist/
+
+# локальные дампы БД бенчмарка
+*.db
+

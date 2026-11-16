@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -68,6 +69,7 @@ import svoboda.runet.abonent0007.ui.theme.Elevated
 import svoboda.runet.abonent0007.ui.theme.ErrorRed
 import svoboda.runet.abonent0007.ui.theme.GoodGreen
 import svoboda.runet.abonent0007.ui.method.MethodSettingsDialog
+import svoboda.runet.abonent0007.ui.method.DnsResolverPanel
 import svoboda.runet.abonent0007.ui.split.RussianDirectDialog
 import svoboda.runet.abonent0007.ui.theme.TextPrimary
 import svoboda.runet.abonent0007.ui.theme.TextSecondary
@@ -84,7 +86,7 @@ enum class ConnectionMethod(val label: String, val available: Boolean) {
     AWG("AWG", true),                          // GoBackend + AmneziaWG
     WARP("WARP", true),                        // Cloudflare WARP
     DPI_DIRECT("DPI", true),                   // Локальный обход DPI (ciadpi + HEV)
-    AUTO("AUTO", false),                       // Автовыбор транспорта — после DPI-1.x
+    AUTO("AUTO", true),                       // Автовыбор транспорта — после DPI-1.x
 }
 
 private val VioletGradient = listOf(Color(0xFFC792EA), Color(0xFF9D6BFF), Color(0xFF7C4DFF))
@@ -448,12 +450,16 @@ fun HomeScreen(
             onDismissRequest = { showDnsDialog = false },
             title = { Text("DNS-серверы") },
             text = {
-                OutlinedTextField(
-                    value = dnsText,
-                    onValueChange = { dnsText = it },
-                    singleLine = true,
-                    placeholder = { Text("1.1.1.1, 8.8.8.8") },
-                )
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 460.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    DnsResolverPanel(
+                        current = dnsText,
+                        onApply = { dnsText = it },
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -43,6 +44,10 @@ import kotlinx.coroutines.launch
 import svoboda.runet.abonent0007.AppGraph
 import svoboda.runet.abonent0007.dpi.DPI_CATALOG_SECTIONS
 import svoboda.runet.abonent0007.dpi.dpiStrategyById
+import svoboda.runet.abonent0007.warp.SeedCatalog
+import svoboda.runet.abonent0007.split.ServiceCatalog
+import svoboda.runet.abonent0007.warp.WarpProfileFactory
+import svoboda.runet.abonent0007.ui.benchmark.DpiBenchmarkDialog
 import svoboda.runet.abonent0007.own.OwnServer
 import svoboda.runet.abonent0007.ui.home.ConnectionMethod
 import svoboda.runet.abonent0007.ui.home.NeonSwitch
@@ -71,6 +76,7 @@ fun MethodSettingsDialog(
     onOpenServers: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var showBenchmark by remember { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -116,13 +122,17 @@ fun MethodSettingsDialog(
                 when (method) {
                     ConnectionMethod.AWG -> AwgSettings(mtu = mtu, onMtu = onMtu, onOpenServers = onOpenServers)
                     ConnectionMethod.WARP -> WarpSettings(mtu = mtu, onMtu = onMtu)
-                    ConnectionMethod.DPI_DIRECT -> DpiSettings()
+                    ConnectionMethod.DPI_DIRECT -> DpiSettings(onOpenBenchmark = { showBenchmark = true })
                     ConnectionMethod.AUTO -> AutoSettings()
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("ЗАКРЫТЬ", color = TextSecondary)
+                }
+
+                if (showBenchmark) {
+                    DpiBenchmarkDialog(onDismiss = { showBenchmark = false })
                 }
             }
         }
@@ -322,6 +332,144 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
     }
     SectionTitle("ПАРАМЕТРЫ ТУННЕЛЯ")
     MtuRow(mtu = mtu, onMtu = onMtu)
+
+    ServiceScopePicker(title = "СЕРВИСЫ В ТУННЕЛЬ (WARP)")
+
+    SectionTitle("DNS В КОНФИГЕ")
+    var dnsValue by remember { mutableStateOf(WarpGenerator.resolveDns("cloudflare")) }
+    Text(
+        text = "Какой резолвер писать в сгенерированные конфиги. Доменные антиблок-резолверы " +
+            "разрешаются в IP при создании профиля — AmneziaWG принимает только адреса.",
+        color = TextSecondary,
+        fontSize = 11.sp,
+    )
+    DnsResolverPanel(
+        current = dnsValue,
+        onApply = { dnsValue = it },
+    )
+
+    SectionTitle("СЕРВИСЫ НАПРЯМУЮ")
+    var directServices by remember { mutableStateOf(AppGraph.prefs.serviceDirectSelection) }
+    Text(
+        text = "Раздельное туннелирование: выбранные приложения идут мимо туннеля (мимо WARP). " +
+            "Пакеты определяются по названию установленного приложения. LAN-трафик при этом " +
+            "и так идёт напрямую — физические подсети приоритетнее маршрута 0/0 туннеля.",
+        color = TextSecondary,
+        fontSize = 11.sp,
+    )
+    ServiceCatalog.services.chunked(2).forEach { rowServices ->
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            rowServices.forEach { service ->
+                val selected = directServices.contains(service.id)
+                TextButton(onClick = {
+                    directServices = if (selected) directServices - service.id else directServices + service.id
+                    AppGraph.prefs.serviceDirectSelection = directServices
+                }) {
+                    Text(
+                        text = service.title,
+                        fontSize = 12.sp,
+                        color = if (selected) AccentGreen else TextSecondary,
+                    )
+                }
+            }
+        }
+    }
+
+    SectionTitle("WARP-ПРОФИЛИ")
+    var profileCount by remember { mutableStateOf(10) }
+    var profileBusy by remember { mutableStateOf(false) }
+    var profileStatus by remember { mutableStateOf<String?>(null) }
+    var profiles by remember { mutableStateOf(AppGraph.manager.generatedProfiles()) }
+
+    Text(
+        text = "Массовое создание конфигов: одна регистрация в Cloudflare, разные anycast-endpoint'ы " +
+            "и рандомизированные junk-параметры (Jc/Jmin/Jmax) — профили не выглядят одинаково для DPI.",
+        color = TextSecondary,
+        fontSize = 11.sp,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf(5, 10, 25).forEach { n ->
+            TextButton(onClick = { profileCount = n }) {
+                Text(
+                    text = "$n",
+                    color = if (profileCount == n) AccentGreen else TextSecondary,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+    }
+    TileRow(
+        title = "Создать профили WARP",
+        value = if (profileBusy) "регистрация и сборка…" else "новая identity + $profileCount конфигов",
+        opaque = true,
+        onClick = {
+            if (profileBusy) return@TileRow
+            profileBusy = true
+            profileStatus = null
+            scope.launch {
+                val seedRaw = SeedCatalog.defaultSeed(AppGraph.seeds)?.raw_config.orEmpty()
+                val result = WarpProfileFactory.generate(
+                    count = profileCount,
+                    identity = null,
+                    seedRawConfig = seedRaw,
+                    dns = dnsValue,
+                )
+                result.profiles.forEach { AppGraph.manager.addGeneratedProfile(it) }
+                profiles = AppGraph.manager.generatedProfiles()
+                profileBusy = false
+                profileStatus = if (result.profiles.isEmpty()) {
+                    "Не удалось создать профили. ${result.note}"
+                } else {
+                    result.note
+                }
+            }
+        },
+    )
+    profileStatus?.let {
+        TileRow(title = "Результат", value = it, opaque = true)
+    }
+    profiles.forEach { profile ->
+        val jc = Regex("(?m)^Jc\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
+        val jmin = Regex("(?m)^Jmin\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
+        val jmax = Regex("(?m)^Jmax\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = "${profile.host}:${profile.port}" +
+                    (if (jc.isNotBlank()) "   ·   Jc $jc, Jmin $jmin, Jmax $jmax" else "") +
+                    (if (profile.observedCountry.isNotBlank()) "   ·   ${profile.observedCountry}" else ""),
+                color = TextPrimary,
+                fontSize = 12.sp,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = {
+                    scope.launch {
+                        profileStatus = "Подключение ${profile.host}:${profile.port} …"
+                        val ok = AppGraph.manager.connectGeneratedProfile(profile)
+                        profileStatus = if (ok) {
+                            "Подключено: ${profile.host}:${profile.port}"
+                        } else {
+                            "Не удалось подключить ${profile.host}:${profile.port}"
+                        }
+                    }
+                }) { Text("ПОДКЛЮЧИТЬ", fontSize = 12.sp, color = AccentGreen) }
+                TextButton(onClick = {
+                    AppGraph.manager.removeGeneratedProfile(profile)
+                    profiles = AppGraph.manager.generatedProfiles()
+                }) { Text("УДАЛИТЬ", fontSize = 12.sp) }
+            }
+        }
+    }
+    if (profiles.isNotEmpty()) {
+        TextButton(onClick = {
+            AppGraph.manager.clearGeneratedProfiles()
+            profiles = AppGraph.manager.generatedProfiles()
+        }) { Text("УДАЛИТЬ ВСЕ ПРОФИЛИ", fontSize = 12.sp) }
+    }
 }
 
 /* ---------------- DPI ---------------- */
@@ -377,7 +525,7 @@ private fun DpiCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DpiSettings() {
+private fun DpiSettings(onOpenBenchmark: () -> Unit = {}) {
     val prefs = AppGraph.prefs
     var strategyId by remember { mutableStateOf(prefs.dpiStrategyId) }
     var port by remember { mutableStateOf(prefs.dpiSocksPort.toString()) }
@@ -415,7 +563,16 @@ private fun DpiSettings() {
             control = { NeonSwitch(mapDns, { mapDns = it; prefs.dpiMapDns = it }) },
         )
         DpiComment("Домены резолвятся внутри обхода (198.18.0.2), соединения идут по домену через ciadpi.\nНе зависит от DNS провайдера и подмены. Не обходит IP-блокировку Telegram.\nЭкспериментально: применится при следующем подключении.")
+        TileRow(
+            title = "Тестирование стратегий",
+            value = "бенчмарк: сравнить стратегии по доменам",
+            opaque = true,
+            onClick = onOpenBenchmark,
+        )
+        DpiComment("Бенчмарк по очереди перезапускает ciadpi с каждой стратегией каталога, проверяет выбранные домены (DNS/TCP/TLS/HTTP) и строит рейтинг. Исходные настройки стратегии восстанавливаются после прогона.")
     }
+
+    ServiceScopePicker(title = "СЕРВИСЫ В ТУННЕЛЬ (DPI)")
 
     SectionTitle("СТРАТЕГИИ")
     DpiComment(DPI_COMMENT_CATALOG)
@@ -570,37 +727,95 @@ private fun DpiSettings() {
 @Composable
 private fun AutoSettings() {
     val prefs = AppGraph.prefs
-    var preferWarp by remember { mutableStateOf(prefs.autoPreferWarp) }
-    var fallback by remember { mutableStateOf(prefs.autoFallback) }
+    var transportOrder by remember { mutableStateOf(prefs.autoTransportOrder) }
+    var countryPriority by remember { mutableStateOf(prefs.autoCountryPriority) }
+    var strict by remember { mutableStateOf(prefs.autoCountryStrict) }
+    var holdMinutes by remember { mutableStateOf(prefs.autoHoldMinutes.toString()) }
 
-    SectionTitle("ПОЛИТИКА")
-    TileRow(
-        title = "Предпочтительный транспорт",
-        value = if (preferWarp) "WARP" else "AWG",
-        opaque = true,
-        onClick = {
-            preferWarp = !preferWarp
-            prefs.autoPreferWarp = preferWarp
-        },
+    SectionTitle("AUTO · АВТОМАТИЧЕСКИЙ ПОДБОР")
+    Text(
+        text = "AUTO выбирает один транспорт по правилам и держит его. Переключение по " +
+            "foreground-приложению НЕ делается — это рвёт активные сессии (загрузка файла, " +
+            "передача в Telegram). При падении туннеля — ограниченный переход на следующего кандидата.",
+        color = TextSecondary,
+        fontSize = 11.sp,
     )
+
+    Text(
+        text = "Порядок транспортов",
+        color = TextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 6.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf("AWG" to "AWG", "WARP" to "WARP", "DPI" to "DPI").forEach { (id, title) ->
+            val active = transportOrder.split(',').any { it.trim().uppercase() == id }
+            TextButton(onClick = {
+                val current = transportOrder.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+                val next = if (active) current - id else current + id
+                transportOrder = next.joinToString(",")
+                prefs.autoTransportOrder = transportOrder
+            }) {
+                Text(
+                    text = title,
+                    fontSize = 12.sp,
+                    color = if (active) AccentGreen else TextSecondary,
+                )
+            }
+        }
+    }
+
+    Text(
+        text = "Приоритет стран выхода",
+        color = TextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 6.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf("NL", "FI", "US").forEach { code ->
+            val active = countryPriority.split(',').any { it.trim().uppercase() == code }
+            TextButton(onClick = {
+                val current = countryPriority.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+                val next = if (active) current - code else current + code
+                countryPriority = next.joinToString(",")
+                prefs.autoCountryPriority = countryPriority
+            }) {
+                Text(
+                    text = code,
+                    fontSize = 12.sp,
+                    color = if (active) AccentGreen else TextSecondary,
+                )
+            }
+        }
+    }
+
     TileRow(
-        title = "Резервное переключение",
-        value = if (fallback) "включено" else "выключено",
+        title = "Строгая страна",
+        value = if (strict) "не уходить в другие страны" else "разрешены другие страны",
         opaque = true,
         control = {
-            NeonSwitch(fallback) {
-                fallback = it
-                prefs.autoFallback = it
+            NeonSwitch(strict) {
+                strict = it
+                prefs.autoCountryStrict = it
             }
         },
     )
-    TileRow(
-        title = "Порядок",
-        value = if (preferWarp) "WARP → AWG" else "AWG → WARP",
-        opaque = true,
+    OutlinedTextField(
+        value = holdMinutes,
+        onValueChange = {
+            holdMinutes = it.filter { ch -> ch.isDigit() }.take(3)
+            holdMinutes.toIntOrNull()?.let { prefs.autoHoldMinutes = it }
+        },
+        label = { Text("Удерживать транспорт, мин (антидребезг)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
     )
     Text(
-        "AUTO включится после стабилизации DPI-движка: сначала проверяется предпочтительный транспорт, затем резервный.",
+        text = "Страна WARP = ближайший PoP Cloudflare и не гарантируется: у профилей измерение " +
+            "фактической страны (после подключения), у своих AWG-серверов страна задаётся вами. " +
+            "Для строгой гарантии NL/FI/US нужны собственные серверы в этих странах.",
         color = TextSecondary,
         fontSize = 11.sp,
     )
