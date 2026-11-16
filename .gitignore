@@ -45,3 +45,7 @@ scripts/gh_*.ps1
 scripts/git_commit_*.ps1
 third_party/byedpi/dist/host/
 
+
+notif_dump.txt
+ui_*.xml
+

@@ -24,7 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +62,6 @@ fun RussianDirectDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val pm = context.packageManager
 
     val installed = remember {
@@ -87,7 +85,7 @@ fun RussianDirectDialog(
         AppGraph.splitManager.resolve(profileId).packageNames
     }
     var enabled by remember {
-        mutableStateOf(initial.intersect(RussianDirectCatalog.allPackages).toMutableSet())
+        mutableStateOf(initial.intersect(RussianDirectCatalog.allPackages).toSet())
     }
 
     Dialog(
@@ -150,8 +148,7 @@ fun RussianDirectDialog(
                                 )
                             }
                             NeonSwitch(allOn) { value ->
-                                if (value) apps.forEach { enabled.add(it.pkg) }
-                                else apps.forEach { enabled.remove(it.pkg) }
+                                enabled = if (value) enabled + apps.map { it.pkg } else enabled - apps.map { it.pkg }.toSet()
                             }
                         }
                     }
@@ -183,7 +180,7 @@ fun RussianDirectDialog(
                                         Text(app.pkg, color = TextSecondary, fontSize = 10.sp)
                                     }
                                     NeonSwitch(isOn) { value ->
-                                        if (value) enabled.add(app.pkg) else enabled.remove(app.pkg)
+                                        enabled = if (value) enabled + app.pkg else enabled - app.pkg
                                     }
                                 }
                             }
@@ -205,7 +202,8 @@ fun RussianDirectDialog(
                         )
                         AppGraph.splitManager.update(profileId, cfg)
                         if (AppGraph.vpn.isConnected) {
-                            scope.launch { AppGraph.reconnect.userConnect(false) }
+                            // Не используем scope диалога (он умирает при закрытии).
+                            AppGraph.appScope.launch { AppGraph.reconnect.userConnect(false) }
                         }
                         onDismiss()
                     },
