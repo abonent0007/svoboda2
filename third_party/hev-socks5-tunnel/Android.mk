@@ -31,7 +31,7 @@ SRCDIR := $(LOCAL_PATH)/src
 include $(CLEAR_VARS)
 include $(LOCAL_PATH)/build.mk
 LOCAL_MODULE    := hev-socks5-tunnel
-LOCAL_SRC_FILES := $(patsubst $(SRCDIR)/%,src/%,$(SRCFILES))
+LOCAL_SRC_FILES := $(filter-out src/hev-jni.c,$(patsubst $(SRCDIR)/%,src/%,$(SRCFILES)))
 LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/src \
 	$(LOCAL_PATH)/src/misc \

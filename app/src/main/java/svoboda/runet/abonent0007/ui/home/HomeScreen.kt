@@ -83,7 +83,7 @@ import svoboda.runet.abonent0007.vpn.VpnPhase
 enum class ConnectionMethod(val label: String, val available: Boolean) {
     AWG("AWG", true),                          // GoBackend + AmneziaWG
     WARP("WARP", true),                        // Cloudflare WARP
-    DPI_DIRECT("DPI", false),                  // Локальный обход DPI — движок не подключён
+    DPI_DIRECT("DPI", true),                   // Локальный обход DPI (ciadpi + HEV)
     AUTO("AUTO", false),                       // Автовыбор транспорта — после DPI-1.x
 }
 

@@ -105,6 +105,11 @@ class Prefs(context: Context) {
         get() = prefs.getInt("dpi_socks_port", 1080).coerceIn(1, 65535)
         set(value) = prefs.edit().putInt("dpi_socks_port", value.coerceIn(1, 65535)).apply()
 
+    /** DNS через туннель (HEV mapdns): домены резолвятся внутри обхода, соединения идут по домену. */
+    var dpiMapDns: Boolean
+        get() = prefs.getBoolean("dpi_map_dns", false)
+        set(value) = prefs.edit().putBoolean("dpi_map_dns", value).apply()
+
     /** Стратегия, собранная генератором (argv для ciadpi). */
     var dpiCustomStrategy: String
         get() = prefs.getString("dpi_custom_strategy", "").orEmpty()

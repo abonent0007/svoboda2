@@ -52,6 +52,9 @@ public final class GoBackend implements Backend {
     private static final String TAG = "AmneziaWG/GoBackend";
     @Nullable private static AlwaysOnCallback alwaysOnCallback;
     @Nullable private static LifecycleCallback lifecycleCallback;
+    private boolean dpiMode = false;
+    @Nullable private DpiSession dpiSession;
+
     private static GhettoCompletableFuture<VpnService> vpnService = new GhettoCompletableFuture<>();
     private final Context context;
     @Nullable private Config currentConfig;
@@ -90,6 +93,28 @@ public final class GoBackend implements Backend {
 
         /** Вызывается, если VPN-сервис не смог перейти в foreground (FGS). */
         default void onForegroundFailed(final String reason) {}
+    }
+
+    /**
+     * DPI-сессия: в DPI-режиме TUN поднимается через establish(), но вместо
+     * передачи fd в amneziawg-go он передаётся DPI-движку (tun2socks).
+     * HEV владеет fd и закрывает его при штатной остановке через onDpiStop().
+     */
+    public interface DpiSession {
+        void onDpiTunFd(final int fd);
+        void onDpiStop();
+    }
+
+    public void setDpiMode(final boolean enabled) {
+        dpiMode = enabled;
+    }
+
+    public boolean isDpiMode() {
+        return dpiMode;
+    }
+
+    public void setDpiSession(@Nullable final DpiSession session) {
+        dpiSession = session;
     }
 
     /** Канал и id уведомления foreground-сервиса VPN. */
@@ -439,33 +464,61 @@ public final class GoBackend implements Backend {
             try (final ParcelFileDescriptor tun = builder.establish()) {
                 if (tun == null)
                     throw new BackendException(Reason.TUN_CREATION_ERROR);
-                Log.d(TAG, "Go backend " + awgVersion());
-                currentTunnelHandle = awgTurnOn(tunnel.getName(), tun.detachFd(), goConfig);
+                if (dpiMode) {
+                    if (dpiSession == null)
+                        throw new BackendException(Reason.TUN_CREATION_ERROR);
+                    final int detachedFd = tun.detachFd();
+                    currentTunnel = tunnel;
+                    currentConfig = config;
+                    currentTunnelHandle = -1;
+                    dpiSession.onDpiTunFd(detachedFd);
+                } else {
+                    Log.d(TAG, "Go backend " + awgVersion());
+                    currentTunnelHandle = awgTurnOn(tunnel.getName(), tun.detachFd(), goConfig);
+                }
             }
-            if (currentTunnelHandle < 0)
+            if (!dpiMode && currentTunnelHandle < 0)
                 throw new BackendException(Reason.GO_ACTIVATION_ERROR_CODE, currentTunnelHandle);
 
-            currentTunnel = tunnel;
-            currentConfig = config;
+            if (!dpiMode) {
+                currentTunnel = tunnel;
+                currentConfig = config;
 
-            service.protect(awgGetSocketV4(currentTunnelHandle));
-            service.protect(awgGetSocketV6(currentTunnelHandle));
+                service.protect(awgGetSocketV4(currentTunnelHandle));
+                service.protect(awgGetSocketV6(currentTunnelHandle));
 
-            launchStatusJob();
-        } else {
-            if (currentTunnelHandle == -1) {
-                Log.w(TAG, "Tunnel already down");
-                return;
+                launchStatusJob();
             }
-            stopStatusJob();
-            int handleToClose = currentTunnelHandle;
-            currentTunnel = null;
-            currentTunnelHandle = -1;
-            currentConfig = null;
-            awgTurnOff(handleToClose);
-            try {
-                vpnService.get(0, TimeUnit.NANOSECONDS).stopSelf();
-            } catch (final TimeoutException ignored) { }
+        } else {
+            if (dpiMode) {
+                if (currentTunnel == null) {
+                    Log.w(TAG, "Tunnel already down");
+                    return;
+                }
+                stopStatusJob();
+                if (dpiSession != null)
+                    dpiSession.onDpiStop();
+                currentTunnel = null;
+                currentTunnelHandle = -1;
+                currentConfig = null;
+                try {
+                    vpnService.get(0, TimeUnit.NANOSECONDS).stopSelf();
+                } catch (final TimeoutException ignored) { }
+            } else {
+                if (currentTunnelHandle == -1) {
+                    Log.w(TAG, "Tunnel already down");
+                    return;
+                }
+                stopStatusJob();
+                int handleToClose = currentTunnelHandle;
+                currentTunnel = null;
+                currentTunnelHandle = -1;
+                currentConfig = null;
+                awgTurnOff(handleToClose);
+                try {
+                    vpnService.get(0, TimeUnit.NANOSECONDS).stopSelf();
+                } catch (final TimeoutException ignored) { }
+            }
         }
 
         tunnel.onStateChange(state);
@@ -593,6 +646,16 @@ public final class GoBackend implements Backend {
 
         @Override
         public void onDestroy() {
+            // DPI: завершаем HEV и отпускаем TUN fd (HEV закрывает fd сам).
+            if (owner != null && owner.dpiMode && owner.dpiSession != null) {
+                try {
+                    owner.dpiSession.onDpiStop();
+                } catch (final Exception e) {
+                    Log.e(TAG, "dpiSession.onDpiStop in onDestroy failed", e);
+                }
+                owner.currentTunnel = null;
+                owner.currentConfig = null;
+            }
             if (owner != null) {
                 final Tunnel tunnel = owner.currentTunnel;
                 if (tunnel != null) {

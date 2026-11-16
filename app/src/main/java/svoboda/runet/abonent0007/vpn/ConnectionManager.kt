@@ -3,6 +3,7 @@ package svoboda.runet.abonent0007.vpn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import svoboda.runet.abonent0007.AppGraph
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.own.OwnServer
 import svoboda.runet.abonent0007.own.OwnServerStore
@@ -77,6 +78,11 @@ class ConnectionManager(
 
     /** Ручное подключение: свой сервер, иначе новый WARP-профиль. */
     suspend fun connectManual(): Boolean {
+        if (prefs.connectionMethod == "DPI_DIRECT") {
+            controller.currentProfileId = "dpi"
+            _profileLabel.value = if (prefs.dpiCustomStrategy.isNotBlank()) "DPI · пользовательская" else "DPI · ${prefs.dpiStrategyId}"
+            return AppGraph.dpi.start()
+        }
         activeServer()?.let { server ->
             controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)
@@ -144,6 +150,11 @@ class ConnectionManager(
 
     /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг. */
     suspend fun connectLastKnown(): Boolean {
+        if (prefs.connectionMethod == "DPI_DIRECT") {
+            controller.currentProfileId = "dpi"
+            _profileLabel.value = if (prefs.dpiCustomStrategy.isNotBlank()) "DPI · пользовательская" else "DPI · " + prefs.dpiStrategyId
+            return AppGraph.dpi.start()
+        }
         activeServer()?.let { server ->
             controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)

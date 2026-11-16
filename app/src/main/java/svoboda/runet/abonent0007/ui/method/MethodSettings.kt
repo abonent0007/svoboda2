@@ -41,6 +41,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import svoboda.runet.abonent0007.AppGraph
+import svoboda.runet.abonent0007.dpi.DPI_CATALOG_SECTIONS
+import svoboda.runet.abonent0007.dpi.dpiStrategyById
 import svoboda.runet.abonent0007.own.OwnServer
 import svoboda.runet.abonent0007.ui.home.ConnectionMethod
 import svoboda.runet.abonent0007.ui.home.NeonSwitch
@@ -104,7 +106,7 @@ fun MethodSettingsDialog(
                     text = when (method) {
                         ConnectionMethod.AWG -> "Свои серверы AmneziaWG и генератор конфигурации"
                         ConnectionMethod.WARP -> "Cloudflare WARP: регистрация и параметры"
-                        ConnectionMethod.DPI_DIRECT -> "Локальный обход DPI (движок ещё не подключён)"
+                        ConnectionMethod.DPI_DIRECT -> "Локальный обход DPI (ciadpi + tun2socks)"
                         ConnectionMethod.AUTO -> "Автоматический выбор транспорта (в разработке)"
                     },
                     color = TextSecondary,
@@ -324,23 +326,55 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
 
 /* ---------------- DPI ---------------- */
 
-private data class DpiStrategy(val id: String, val name: String, val args: String)
 
-private val DPI_STRATEGIES = listOf(
-    DpiStrategy("BDP-00", "Контрольная (оригинал)", "-Ku -a3 -An -Kt,h -d1 -s0+s -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s -d35+s -An"),
-    DpiStrategy("BDP-01", "Разреженная", "-Ku -a3 -An -Kt,h -d1 -s0+s -d5+s -s11+s -d18+s -s27+s -d37+s -An"),
-    DpiStrategy("BDP-02", "Плотная начальная", "-Ku -a3 -An -Kt,h -d1 -s0+s -d2+s -s4+s -d6+s -s9+s -d13+s -s18+s -d24+s -s31+s -An"),
-    DpiStrategy("BDP-03", "Split first", "-Ku -a3 -An -Kt,h -s0+s -d2+s -s5+s -d8+s -s12+s -d17+s -s23+s -d30+s -An"),
-    DpiStrategy("BDP-04", "Disorder dominant", "-Ku -a3 -An -Kt,h -d1 -s0+s -d3+s -d5+s -d8+s -d12+s -d17+s -s23+s -d30+s -An"),
-    DpiStrategy("BDP-05", "Split dominant", "-Ku -a3 -An -Kt,h -d1 -s0+s -s3+s -d6+s -s9+s -s13+s -d18+s -s24+s -s31+s -An"),
-    DpiStrategy("BDP-06", "Только split", "-Ku -a3 -An -Kt,h -s0+s -s2+s -s5+s -s9+s -s14+s -s20+s -s27+s -s35+s -An"),
-    DpiStrategy("BDP-07", "Только disorder", "-Ku -a3 -An -Kt,h -d1 -d3+s -d6+s -d10+s -d15+s -d21+s -d28+s -d36+s -An"),
-    DpiStrategy("BDP-08", "Позднее SNI", "-Ku -a3 -An -Kt,h -d1 -s0+s -d6+s -s13+s -d21+s -s30+s -d40+s -An"),
-    DpiStrategy("BDP-09", "Альтернативная", "-Ku -a3 -An -Kt,h -d1 -s1+s -d4+s -s8+s -d13+s -s19+s -d26+s -s34+s -An"),
-    DpiStrategy("BDP-10", "UDP low", "-Ku -a1 -An -Kt,h -d1 -s0+s -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s -d35+s -An"),
-    DpiStrategy("BDP-11", "UDP high", "-Ku -a4 -An -Kt,h -d1 -s0+s -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s -d35+s -An"),
-    DpiStrategy("BDP-12", "TLS и HTTP раздельно", "-Ku -a3 -An -Kt -d1 -s0+s -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s -d35+s -An -Kh -d1 -s0+h -d3+h -s6+h -d9+h -s12+h -d15+h -s20+h -d25+h -s30+h -d35+h -An"),
-)
+private val DPI_TOKEN = Regex("^-{1,2}[A-Za-z0-9?_=:]+(?:[,+./-][A-Za-z0-9?_=:]+)*$")
+
+/** Лексическая проверка argv для ciadpi. Пустая строка = "использовать каталог" (валидное состояние). */
+private fun validateDpiArgs(args: String): String? {
+    val t = args.trim()
+    if (t.isEmpty()) return null
+    if (t.length > 1024) return "Слишком длинная строка (макс. 1024 символа)"
+    val tokens = t.split(Regex("\\s+"))
+    if (tokens.size > 64) return "Слишком много аргументов (макс. 64)"
+    val bad = tokens.firstOrNull { !DPI_TOKEN.matches(it) }
+    return if (bad != null) "Недопустимый аргумент: $bad" else null
+}
+
+private const val DPI_COMMENT_ENGINE =
+    "Весь трафик приложений уходит в TUN → tun2socks (HEV) → локальный SOCKS5 127.0.0.1:1080 → ciadpi → интернет.\nСобственный пакет приложения исключён из VPN, иначе ciadpi оказался бы в собственном туннеле (рекурсия)."
+
+private const val DPI_COMMENT_CATALOG =
+    "Каталог ByeDPI: контрольные (BDP), простые P1, fake-пакеты, комбинированные P2, расширенные (экспериментальные) и HTTP-only.\nОдна стратегия применяется ко ВСЕМУ TCP-трафику через обход. Нажмите — применится к следующему подключению. Приоритет ниже, чем у своей стратегии."
+
+private const val DPI_COMMENT_BUILDER =
+    "Быстрая сборка строки: число split-точек, доля disorder, UDP fake-пакеты.\nКнопка «Собрать стратегию» сохраняет результат как пользовательскую строку (каталог отключается)."
+
+private const val DPI_COMMENT_CUSTOM =
+    "Пустое поле = стратегия из каталога.\nФормат: токены через пробел, например: -Ku -a3 -An -Kt,h -d1 -s0+s -An — любые опции ByeDPI.\nСтроку получает ciadpi напрямую, без shell. Проверяйте счётчик «argv: N аргументов»."
+
+private const val DPI_COMMENT_LIMITS =
+    "Прямой доступ к DC Telegram (149.154.x / 91.108.x) блокируется на IP-уровне — ByeDPI это не обходит.\nКлиент Telegram на этих IP не подключится ни через одну стратегию (доступна веб-версия и web.telegram.org).\nYouTube на этой сети сбрасывается по SNI — нужен AWG или WARP."
+
+@Composable
+private fun DpiComment(text: String) {
+    Text(text = text, color = TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+}
+
+@Composable
+private fun DpiCard(content: @Composable () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Elevated.copy(alpha = 0.35f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            content()
+        }
+    }
+}
 
 @Composable
 private fun DpiSettings() {
@@ -351,56 +385,75 @@ private fun DpiSettings() {
     var disorder by remember { mutableStateOf(true) }
     var fakeCount by remember { mutableStateOf(3) }
     var generated by remember { mutableStateOf(prefs.dpiCustomStrategy) }
+    var customArgs by remember { mutableStateOf(prefs.dpiCustomStrategy) }
+    var customError by remember { mutableStateOf<String?>(null) }
+    var customSaved by remember { mutableStateOf(false) }
+    var mapDns by remember { mutableStateOf(prefs.dpiMapDns) }
 
     SectionTitle("ДВИЖОК")
-    TileRow(
-        title = "ciadpi + hev-socks5-tunnel",
-        value = "не подключён — в разработке",
-        opaque = true,
-    )
-    TileRow(
-        title = "SOCKS5 порт",
-        value = port,
-        opaque = true,
-        onClick = { },
-    )
-    OutlinedTextField(
-        value = port,
-        onValueChange = {
-            port = it.filter { ch -> ch.isDigit() }.take(5)
-            port.toIntOrNull()?.let { p -> if (p in 1..65535) prefs.dpiSocksPort = p }
-        },
-        label = { Text("Порт локального SOCKS5") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    DpiCard {
+        TileRow(
+            title = "ciadpi + hev-socks5-tunnel",
+            value = "локальный SOCKS5 · MTProto-DC напрямую недоступны",
+            opaque = true,
+        )
+        DpiComment(DPI_COMMENT_ENGINE)
+        OutlinedTextField(
+            value = port,
+            onValueChange = {
+                port = it.filter { ch -> ch.isDigit() }.take(5)
+                port.toIntOrNull()?.let { p -> if (p in 1..65535) prefs.dpiSocksPort = p }
+            },
+            label = { Text("Порт локального SOCKS5 (по умолчанию 1080)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TileRow(
+            title = "DNS через туннель (mapdns)",
+            value = if (mapDns) "включён" else "выключен",
+            opaque = true,
+            control = { NeonSwitch(mapDns, { mapDns = it; prefs.dpiMapDns = it }) },
+        )
+        DpiComment("Домены резолвятся внутри обхода (198.18.0.2), соединения идут по домену через ciadpi.\nНе зависит от DNS провайдера и подмены. Не обходит IP-блокировку Telegram.\nЭкспериментально: применится при следующем подключении.")
+    }
 
-    SectionTitle("СТРАТЕГИЯ")
-    DPI_STRATEGIES.forEach { s ->
-        val selected = s.id == strategyId
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    strategyId = s.id
-                    prefs.dpiStrategyId = s.id
-                },
-            shape = RoundedCornerShape(12.dp),
-            color = if (selected) AccentGreen.copy(alpha = 0.14f) else Elevated.copy(alpha = 0.5f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) AccentGreen else Border),
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text("${s.id} · ${s.name}", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                if (selected) {
-                    Text(s.args, color = TextSecondary, fontSize = 10.sp)
+    SectionTitle("СТРАТЕГИИ")
+    DpiComment(DPI_COMMENT_CATALOG)
+    DPI_CATALOG_SECTIONS.forEach { (section, strategies) ->
+        Text(
+            text = section,
+            color = TextSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        strategies.forEach { s ->
+            val selected = s.id == strategyId
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        strategyId = s.id
+                        prefs.dpiStrategyId = s.id
+                    },
+                shape = RoundedCornerShape(12.dp),
+                color = if (selected) AccentGreen.copy(alpha = 0.14f) else Elevated.copy(alpha = 0.5f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) AccentGreen else Border),
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text("${s.id} · ${s.name}", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    if (selected) {
+                        Text(s.args, color = TextSecondary, fontSize = 10.sp)
+                    }
                 }
             }
         }
     }
 
-    SectionTitle("ГЕНЕРАТОР СТРАТЕГИИ")
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Точек split: $splitCount", color = TextSecondary, fontSize = 11.sp)
+    SectionTitle("КОНСТРУКТОР")
+    DpiCard {
+        DpiComment(DPI_COMMENT_BUILDER)
+        Text("Число split: $splitCount", color = TextSecondary, fontSize = 11.sp)
         Slider(
             value = splitCount.toFloat(),
             onValueChange = { splitCount = it.toInt().coerceIn(3, 10) },
@@ -433,13 +486,84 @@ private fun DpiSettings() {
                 sb.append(" -An")
                 generated = sb.toString()
                 prefs.dpiCustomStrategy = generated
+                customArgs = generated
+                customError = null
+                customSaved = true
             },
         )
         if (generated.isNotBlank()) {
-            TileRow(title = "Сгенерировано", value = generated, opaque = true)
+            TileRow(title = "Строка стратегии", value = generated, opaque = true)
         }
     }
+
+    SectionTitle("СВОЯ СТРАТЕГИЯ")
+    if (prefs.dpiCustomStrategy.isNotBlank()) {
+        TileRow(
+            title = "Своя стратегия активна",
+            value = "имеет приоритет над каталогом",
+            opaque = true,
+        )
+    }
+    DpiCard {
+        OutlinedTextField(
+            value = customArgs,
+            onValueChange = { v ->
+                customArgs = v
+                customError = validateDpiArgs(v)
+                customSaved = false
+            },
+            label = { Text("Аргументы ciadpi / пользовательская стратегия") },
+            placeholder = { Text("-Ku -a3 -An -Kt,h -d1 -s0+s -d3+s -s6+s -An") },
+            singleLine = false,
+            minLines = 2,
+            maxLines = 6,
+            isError = customError != null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        DpiComment(DPI_COMMENT_CUSTOM)
+        customError?.let { err ->
+            Text(err, color = Color(0xFFFFB300), fontSize = 11.sp)
+        }
+        if (customError == null && customArgs.trim().isNotEmpty()) {
+            Text(
+                text = "argv: " + customArgs.trim().split(Regex("\\s+")).size + " аргументов · готово к сохранению",
+                color = TextSecondary,
+                fontSize = 11.sp,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = {
+                customArgs = dpiStrategyById(strategyId)?.args.orEmpty()
+                customError = validateDpiArgs(customArgs)
+                customSaved = false
+            }) { Text("Копировать из каталога") }
+            TextButton(
+                enabled = customError == null,
+                onClick = {
+                    prefs.dpiCustomStrategy = customArgs.trim()
+                    customSaved = true
+                },
+            ) { Text("Сохранить") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = {
+                customArgs = ""
+                prefs.dpiCustomStrategy = ""
+                customError = null
+                customSaved = false
+            }) { Text("Очистить") }
+        }
+        if (customSaved) {
+            Text(
+                text = "Сохранено. Переподключитесь, чтобы применить (связь по SOCKS5 будет проверена автоматически).",
+                color = AccentGreen,
+                fontSize = 11.sp,
+            )
+        }
+    }
+    DpiComment(DPI_COMMENT_LIMITS)
 }
+
 
 /* ---------------- AUTO ---------------- */
 

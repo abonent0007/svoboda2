@@ -126,6 +126,10 @@ class ReconnectCoordinator(
 
     private fun checkTunnel(): Boolean {
         return runBlocking {
+            // DPI-режим: рукопожатия нет; здоровье проверяем через локальный SOCKS5 (ciadpi).
+            controller.dpiProbePort?.let { port ->
+                return@runBlocking NetProbe.fetchExitViaSocks(port) != null
+            }
             if (controller.lastHandshake() <= 0) return@runBlocking false
             NetProbe.fetchExit() != null
         }

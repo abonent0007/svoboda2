@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.Socket
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -60,6 +61,44 @@ object NetProbe {
     }
 
     /** «RU — Россия» из кода страны; пустая строка при неизвестном коде. */
+    private fun socksClient(port: Int): OkHttpClient = OkHttpClient.Builder()
+        .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port)))
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    /** Выход через локальный SOCKS5 (ciadpi). Честное доказательство, что обход DPI работает. */
+    suspend fun fetchExitViaSocks(port: Int): ExitInfo? = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder()
+                .url("https://www.cloudflare.com/cdn-cgi/trace")
+                .header("User-Agent", "Svoboda2-Android")
+                .build()
+            socksClient(port).newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching null
+                val body = response.body?.string().orEmpty()
+                var ip = ""
+                var loc = ""
+                body.lineSequence().forEach { line ->
+                    when {
+                        line.startsWith("ip=") -> ip = line.substringAfter("ip=").trim()
+                        line.startsWith("loc=") -> loc = line.substringAfter("loc=").trim()
+                    }
+                }
+                if (ip.isBlank()) null else ExitInfo(ip, loc)
+            }
+        }.getOrNull()
+    }
+
+    /** Пинг через локальный SOCKS5 (ciadpi): время полного HTTPS-ответа; -1 при ошибке. */
+    suspend fun socksPing(port: Int): Int = withContext(Dispatchers.IO) {
+        val started = System.nanoTime()
+        val exit = fetchExitViaSocks(port)
+        if (exit == null) return@withContext -1
+        ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(0)
+    }
+
     fun countryLabel(code: String): String {
         if (code.isBlank()) return ""
         val name = Locale("", code.uppercase(Locale.US)).displayCountry

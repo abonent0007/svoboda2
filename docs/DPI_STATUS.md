@@ -136,3 +136,44 @@ Consequently the following cannot be executed yet:
 - Build host: Windows 11, JDK 17, Gradle 9.3.1, AGP 9.1.0, Kotlin 2.2.10, NDK 27.2.12479018.
 - The `uname -m` CMake failure was a PATH issue, not a code defect — fixed by adding
   `C:\Users\Abonen0007\dev\git\usr\bin` and `...\mingw64\bin` to PATH before Gradle.
+
+
+## 7. DPI engine on device (2026-11-16) — WORKING, WITH CAVEATS
+
+### 7.1 What runs (Realme RMX3370, Android 13, Wi-Fi + 5G)
+- APK packages libbyedpi.so + libhev-socks5-tunnel.so for arm64-v8a/armeabi-v7a/x86_64;
+  useLegacyPackaging = true required (ciadpi must exec from nativeLibraryDir).
+- ciadpi = separate process; HEV = in-app JNI (HevBridge).
+- GoBackend DPI branch: TUN via establish() → fd handed to HEV (no wgTurnOn), own package excluded (no recursion).
+- DPI proof: HTTPS exit-IP via local SOCKS5; CONNECTED only after it returns, else DEGRADED. ReconnectCoordinator/NetProbe/runTest in DPI mode go through SOCKS5.
+- Crash fix: ciadpi SIGABRT (hev-jni.c JNI_OnLoad → RegisterNatives for missing class hev.htproxy.TProxyService) — excluded src/hev-jni.c from HEV build; exports intact.
+- Auto-connect on launch rebuilds DPI with saved prefs.
+
+### 7.2 Strategy system
+- Catalog 13 → 42 entries, grouped UI sections: Контрольные (BDP) / Простые P1 / Fake P1 / Комбинированные P2 / Расширенные (экспериментальные) / HTTP-only.
+- All tokens verified against ciadpi 17.3 sources (options table + parse_offset).
+- Deliberately NOT added: DPI-X02/X04 (-n {sni} placeholder, not valid ciadpi), DPI-X07 (-S TCP MD5SIG).
+- Custom strategy: multiline field, argv-count validation, custom overrides catalog; grouped settings UI with multi-line comments.
+
+### 7.3 Measured on this device/ISP
+| target | direct | via ciadpi |
+|---|---|---|
+| Cloudflare trace | OK | OK |
+| ya.ru | 302 | 302 |
+| web.telegram.org | 200 | 200 |
+| www.youtube.com | RKN throttling | RST immediately |
+| chatgpt/grok/api.groq/openrouter.ai | 200/302/404 | TLS ok, HTTP 403 (anti-bot) |
+| Telegram DC 149.154.x / 91.108.x | blocked | blocked (IP-level) |
+
+- Telegram app: not reachable via any ByeDPI strategy. Use WARP/AWG or web.telegram.org.
+- YouTube: feed on Wi-Fi + BDP-00 loaded; video never started; on 5G + user strategy even the feed fails.
+
+### 7.4 GeoHideDNS assessment
+- GeoHide resolvers answer IDENTICALLY to 1.1.1.1 on 8 blocked domains → plain switch DNS does nothing.
+- GeoHide hosts pins ~4340 domains → 3-4 CDN IPs (verified: 200/301 on www.youtube.com via those IPs).
+- Android no-root cannot install hosts → GeoHide semantics only as in-app static map (DPI-1.6 candidate) or HEV mapdns (shipped this session, experimental).
+
+### 7.5 Open / user decisions
+- DPI-1.6 GeoHide CDN: static map patch for HEV (moderate effort).
+- Telegram: WARP/AWG or MTProxy inside the app.
+- AI services SNI-reachable; 403 is app-layer (verify in real apps).

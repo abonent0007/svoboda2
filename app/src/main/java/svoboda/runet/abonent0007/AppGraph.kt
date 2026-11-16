@@ -27,6 +27,7 @@ object AppGraph {
     lateinit var reconnect: ReconnectCoordinator
     lateinit var profileTester: ProfileTestCoordinator
     lateinit var prefs: Prefs
+    lateinit var dpi: svoboda.runet.abonent0007.dpi.DpiEngine
     lateinit var seeds: List<BundledSeed>
     lateinit var servers: OwnServerStore
     lateinit var splitManager: SplitTunnelManager
@@ -58,6 +59,13 @@ class SvobodaApp : Application() {
             autoConnect = { AppGraph.manager.connectLastKnown() },
             disconnectAction = { AppGraph.vpn.disconnect() },
         )
+        AppGraph.dpi = svoboda.runet.abonent0007.dpi.DpiEngine(
+            context = this,
+            prefs = AppGraph.prefs,
+            splitManager = AppGraph.splitManager,
+            vpn = AppGraph.vpn,
+        )
+        AppGraph.vpn.onDpiDisconnect = { AppGraph.dpi.stopProcess() }
         GoBackend.setLifecycleCallback(VpnLifecycleCallback(AppGraph.connectionState))
         GoBackend.setAlwaysOnCallback(object : GoBackend.AlwaysOnCallback {
             override fun alwaysOnTriggered() {

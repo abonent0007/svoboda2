@@ -94,6 +94,14 @@ class VpnController(
     var activeConfigText: String? = null
         private set
 
+    /** Вызывается на старте disconnect() — позволяет DpiEngine остановить ciadpi до закрытия TUN. */
+    var onDpiDisconnect: (() -> Unit)? = null
+
+    /** Порт локального SOCKS5 (ciadpi) в DPI-режиме; null вне DPI. */
+    @Volatile
+    var dpiProbePort: Int? = null
+        private set
+
     fun prepareVpn(context: Context): Intent? = VpnService.prepare(context)
 
     val isConnected: Boolean
@@ -112,7 +120,7 @@ class VpnController(
         monitorJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 if ((_phase.value == VpnPhase.CONNECTED || _phase.value == VpnPhase.DEGRADED) && prefs.pingGraphEnabled) {
-                    val ping = NetProbe.tcpPing()
+                    val ping = dpiProbePort?.let { NetProbe.socksPing(it) } ?: NetProbe.tcpPing()
                     // NetProbe возвращает -1 при ошибке: не показываем «-1 мс» и не портим график.
                     _lastPing.value = ping.takeIf { it >= 0 }
                     if (ping >= 0) {
@@ -215,8 +223,143 @@ class VpnController(
         }
     }
 
-    fun disconnect() {
+    /** Подготовить одноразовую DPI-сессию: TUN fd уходит в HEV вместо amneziawg. */
+    private fun prepareDpiSession(): GoBackend.DpiSession {
+        val prefs = Prefs(appContext)
+        val port = prefs.dpiSocksPort.coerceIn(1, 65535)
+        val mtu = prefs.tunnelMtu.coerceIn(1200, 1480)
+        val mapDns = prefs.dpiMapDns
+        val yaml = buildString {
+            appendLine("misc:")
+            appendLine("  log-level: 'warn'")
+            appendLine("tunnel:")
+            appendLine("  name: 'svoboda-dpi'")
+            appendLine("  mtu: $mtu")
+            appendLine("  ipv4: '192.0.2.1'")
+            appendLine("socks5:")
+            appendLine("  address: '127.0.0.1'")
+            appendLine("  port: $port")
+            appendLine("  udp: 'udp'")
+            if (mapDns) {
+                appendLine("mapdns:")
+                appendLine("  address: 198.18.0.2")
+                appendLine("  port: 53")
+                appendLine("  network: 100.64.0.0")
+                appendLine("  netmask: 255.192.0.0")
+                appendLine("  cache-size: 10000")
+            }
+        }
+        return object : GoBackend.DpiSession {
+            override fun onDpiTunFd(fd: Int) {
+                HevHolder.nativeStart(yaml, fd)
+            }
+            override fun onDpiStop() {
+                HevHolder.nativeStop()
+            }
+        }
+    }
+
+    /** Прокси к HevBridge, чтобы не тянуть объект в VpnController до инициализации JNI. */
+    object HevHolder {
+        fun nativeStart(config: String, fd: Int) { runCatching { svoboda.runet.abonent0007.dpi.HevBridge.nativeStart(config, fd) }
+            .onFailure { android.util.Log.e("SvobodaVpn", "HEV nativeStart failed", it) } }
+        fun nativeStop() { runCatching { svoboda.runet.abonent0007.dpi.HevBridge.nativeStop() }
+            .onFailure { android.util.Log.e("SvobodaVpn", "HEV nativeStop failed", it) } }
+    }
+
+    suspend fun connectDpi(configText: String): Boolean = withContext(Dispatchers.IO) {
+        _phase.value = VpnPhase.PREPARING
+        stateRepo?.setVpn(VpnSessionPhase.PREPARING)
+        stateRepo?.setTransport(TunnelTransportPhase.IDLE)
+        _error.value = null
+        _exit.value = null
+        _pingHistory.value = emptyList()
+        _lastPing.value = null
+        runCatching {
+            val normalized = ConfigNormalizer.normalize(
+                configText,
+                ipv6Enabled = prefs.ipv6Enabled,
+                mtuOverride = prefs.tunnelMtu,
+                dnsOverride = prefs.dnsServers.ifBlank { null },
+            )
+            val config = Config.parse(
+                BufferedReader(
+                    StringReader(applySplitTunnel(normalized)),
+                ),
+            )
+            activeConfigText = configText
+            _phase.value = VpnPhase.CONNECTING
+            stateRepo?.setVpn(VpnSessionPhase.CONNECTING)
+            stateRepo?.setTransport(TunnelTransportPhase.CONNECTING)
+
+            val goBackend = backend as? GoBackend
+                ?: throw IllegalStateException("DPI mode requires GoBackend implementation")
+            goBackend.setDpiSession(prepareDpiSession())
+            goBackend.setDpiMode(true)
+            try {
+                backend.setState(tunnel, Tunnel.State.UP, config)
+            } catch (e: Exception) {
+                goBackend.setDpiMode(false)
+                goBackend.setDpiSession(null)
+                throw e
+            }
+            // Рукопожатия в DPI-режиме нет: доказательство связи делает DpiEngine через SOCKS5.
+            _phase.value = VpnPhase.VERIFYING
+            stateRepo?.setVpn(VpnSessionPhase.ESTABLISHING)
+            stateRepo?.setTransport(TunnelTransportPhase.FLOWING)
+            true
+        }.getOrElse { e ->
+            android.util.Log.e("SvobodaVpn", "connectDpi failed", e)
+            (backend as? GoBackend)?.setDpiMode(false)
+            (backend as? GoBackend)?.setDpiSession(null)
+            backend.runCatching { backend.setState(tunnel, Tunnel.State.DOWN, null) }
+            _phase.value = VpnPhase.ERROR
+            stateRepo?.setVpn(VpnSessionPhase.ERROR)
+            stateRepo?.setTransport(TunnelTransportPhase.FAILED)
+            _error.value = when (e) {
+                is BackendException -> "${e.javaClass.simpleName}(${e.reason}): ${e.message ?: ""}"
+                else -> "${e.javaClass.simpleName}: ${e.message ?: "Ошибка подключения"}"
+            }
+            false
+        }
+    }
+
+    fun disconnectDpi() {
+        onDpiDisconnect?.invoke()
         runCatching { backend.setState(tunnel, Tunnel.State.DOWN, null) }
+        dpiProbePort = null
+        activeConfigText = null
+        _exit.value = null
+        _lastPing.value = null
+        _phase.value = VpnPhase.IDLE
+        stateRepo?.setVpn(VpnSessionPhase.STOPPED)
+        stateRepo?.setTransport(TunnelTransportPhase.CLOSED)
+        (backend as? GoBackend)?.setDpiMode(false)
+        (backend as? GoBackend)?.setDpiSession(null)
+    }
+
+    fun setError(message: String?) {
+        _error.value = message
+    }
+
+    fun setDpiProbePort(port: Int?) {
+        dpiProbePort = port
+    }
+
+    fun setExitInfo(info: NetProbe.ExitInfo?) {
+        _exit.value = info
+    }
+
+    fun markConnected() {
+        _phase.value = VpnPhase.CONNECTED
+        stateRepo?.setVpn(VpnSessionPhase.CONNECTED)
+        stateRepo?.setTransport(TunnelTransportPhase.FLOWING)
+    }
+
+    fun disconnect() {
+        onDpiDisconnect?.invoke()
+        runCatching { backend.setState(tunnel, Tunnel.State.DOWN, null) }
+        dpiProbePort = null
         activeConfigText = null
         _exit.value = null
         _lastPing.value = null
@@ -228,8 +371,9 @@ class VpnController(
     /** Кнопка «Проверить связь»: IP/страна + три пинга. */
     suspend fun runTest() {
         _testResult.value = "Проверка…"
-        val exit = NetProbe.fetchExit()
-        val pings = (1..3).map { NetProbe.tcpPing() }
+        val port = dpiProbePort
+        val exit = port?.let { NetProbe.fetchExitViaSocks(it) } ?: NetProbe.fetchExit()
+        val pings = (1..3).map { port?.let { NetProbe.socksPing(it) } ?: NetProbe.tcpPing() }
         val ok = pings.filter { it >= 0 }
         _testResult.value = buildString {
             if (exit != null) {
