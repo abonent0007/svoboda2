@@ -5,8 +5,13 @@
 
 package org.amnezia.awg.backend;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.system.OsConstants;
@@ -82,7 +87,14 @@ public final class GoBackend implements Backend {
     public interface LifecycleCallback {
         void onVpnRevoked();
         void onAlwaysOnTriggered();
+
+        /** Вызывается, если VPN-сервис не смог перейти в foreground (FGS). */
+        default void onForegroundFailed(final String reason) {}
     }
+
+    /** Канал и id уведомления foreground-сервиса VPN. */
+    public static final String VPN_CHANNEL_ID = "svoboda_vpn";
+    public static final int VPN_NOTIFICATION_ID = 1001;
 
 
 
@@ -509,7 +521,67 @@ public final class GoBackend implements Backend {
         @Override
         public void onCreate() {
             vpnService.complete(this);
+            createNotificationChannel();
             super.onCreate();
+        }
+
+        private void createNotificationChannel() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+            final NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm == null) return;
+            NotificationChannel channel = nm.getNotificationChannel(VPN_CHANNEL_ID);
+            if (channel == null) {
+                channel = new NotificationChannel(
+                        VPN_CHANNEL_ID,
+                        "VPN-соединение",
+                        NotificationManager.IMPORTANCE_LOW
+                );
+                channel.setDescription("Постоянное уведомление активного VPN-туннеля");
+                channel.setShowBadge(false);
+                nm.createNotificationChannel(channel);
+            }
+        }
+
+        private Notification buildVpnNotification() {
+            final Notification.Builder b = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    ? new Notification.Builder(this, VPN_CHANNEL_ID)
+                    : new Notification.Builder(this);
+            b.setContentTitle("Свобода 2.0")
+                    .setContentText("VPN-туннель активен")
+                    .setSmallIcon(android.R.drawable.ic_lock_lock)
+                    .setOngoing(true)
+                    .setOnlyAlertOnce(true);
+            final Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
+            if (open != null) {
+                open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                final PendingIntent pi = PendingIntent.getActivity(
+                        this, 0, open,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                );
+                b.setContentIntent(pi);
+            }
+            return b.build();
+        }
+
+        /**
+         * Переводит сервис в foreground. Ошибки не глотаем: сообщаем через lifecycleCallback,
+         * чтобы UI не показывал CONNECTED при неработающем FGS.
+         */
+        private void ensureForeground() {
+            try {
+                final Notification n = buildVpnNotification();
+                if (Build.VERSION.SDK_INT >= 34) {
+                    startForeground(VPN_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED);
+                } else {
+                    startForeground(VPN_NOTIFICATION_ID, n);
+                }
+            } catch (final Exception e) {
+                Log.e(TAG, "startForeground failed", e);
+                if (lifecycleCallback != null) {
+                    lifecycleCallback.onForegroundFailed(e.getClass().getSimpleName() + ": " + e.getMessage());
+                }
+                stopSelf();
+            }
         }
 
         @Override
@@ -532,6 +604,11 @@ public final class GoBackend implements Backend {
                     tunnel.onStateChange(State.DOWN);
                 }
             }
+            // Убираем постоянное уведомление при фактической остановке сервиса.
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } catch (final Exception ignored) {
+            }
             vpnService = vpnService.newIncompleteFuture();
             super.onDestroy();
         }
@@ -539,6 +616,8 @@ public final class GoBackend implements Backend {
         @Override
         public int onStartCommand(@Nullable final Intent intent, final int flags, final int startId) {
             vpnService.complete(this);
+            // Сразу уходим в foreground, до поднятия туннеля.
+            ensureForeground();
             if (intent == null || intent.getComponent() == null || !intent.getComponent().getPackageName().equals(getPackageName())) {
                 Log.d(TAG, "Service started by Always-on VPN feature");
                 if (alwaysOnCallback != null)

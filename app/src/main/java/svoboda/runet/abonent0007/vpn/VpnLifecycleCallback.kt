@@ -21,4 +21,16 @@ class VpnLifecycleCallback(
         // Async restore handled by AppGraph; here just mark
         stateRepo.setVpn(VpnSessionPhase.PREPARING)
     }
+
+    /**
+     * FGS не поднялся: VPN не должен оставаться в «полуинициализированном» состоянии
+     * и UI не должен показывать CONNECTED.
+     */
+    override fun onForegroundFailed(reason: String) {
+        android.util.Log.e("SvobodaVpn", "Foreground service failed: $reason")
+        stateRepo.setVpn(VpnSessionPhase.ERROR)
+        AppGraph.appScope.launch {
+            runCatching { AppGraph.reconnect.userDisconnect() }
+        }
+    }
 }
