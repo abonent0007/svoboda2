@@ -105,9 +105,12 @@ class VpnController(
             while (isActive) {
                 if (_phase.value == VpnPhase.CONNECTED && prefs.pingGraphEnabled) {
                     val ping = NetProbe.tcpPing()
-                    _lastPing.value = ping
-                    _pingHistory.update { history ->
-                        (history + ping).takeLast(PING_HISTORY_CAP)
+                    // NetProbe возвращает -1 при ошибке: не показываем «-1 мс» и не портим график.
+                    _lastPing.value = ping.takeIf { it >= 0 }
+                    if (ping >= 0) {
+                        _pingHistory.update { history ->
+                            (history + ping).takeLast(PING_HISTORY_CAP)
+                        }
                     }
                 }
                 delay(prefs.pingIntervalMs.toLong())

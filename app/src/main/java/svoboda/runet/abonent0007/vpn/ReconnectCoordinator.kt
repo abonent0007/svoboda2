@@ -104,6 +104,8 @@ class ReconnectCoordinator(
                 if (healthy) {
                     _state.value = ReconnectState.CONNECTED
                     failureCount = 0
+                    // Соединение восстановлено — убираем устаревший обратный отсчёт.
+                    controller.setStatus(null)
                 } else {
                     scheduleReconnect(currentSession)
                 }
@@ -136,11 +138,15 @@ class ReconnectCoordinator(
         cancelReconnect()
         cancelHealth()
         _state.value = ReconnectState.CONNECTING
+        // Новая попытка — убираем устаревший обратный отсчёт прошлой ошибки.
+        controller.setStatus(null)
         val ok = if (manual) manualConnect() else autoConnect()
         if (intent.sessionId != currentSession) return@withLock
         if (ok) {
             _state.value = ReconnectState.CONNECTED
             failureCount = 0
+            // Успешное подключение — сбрасываем статус реконнекта, чтобы он не «прилипал» в UI.
+            controller.setStatus(null)
             startHealth(currentSession)
         } else {
             _state.value = ReconnectState.FAILED
@@ -161,7 +167,8 @@ class ReconnectCoordinator(
     private suspend fun scheduleReconnect(currentSession: Long) {
         if (!intent.shouldBeConnected || intent.sessionId != currentSession) return
         cancelReconnect()
-        val baseDelay = if (failureCount >= backoffBase.size) 300L else backoffBase[failureCount.coerceAtMost(backoffBase.lastIndex)]
+        // Потолок backoff — последний элемент политики (60 с), а не отдельное значение.
+        val baseDelay = backoffBase[failureCount.coerceAtMost(backoffBase.lastIndex)]
         failureCount = (failureCount + 1).coerceAtMost(backoffBase.size)
         val jitter = (baseDelay * 0.2 * (Random.nextDouble() * 2 - 1)).toLong()
         val delaySec = (baseDelay + jitter).coerceAtLeast(1)

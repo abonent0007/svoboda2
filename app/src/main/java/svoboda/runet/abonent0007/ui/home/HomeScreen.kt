@@ -7,6 +7,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +35,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +71,20 @@ import svoboda.runet.abonent0007.ui.theme.TextPrimary
 import svoboda.runet.abonent0007.ui.theme.TextSecondary
 import svoboda.runet.abonent0007.vpn.VpnPhase
 
+/**
+ * Способы подключения в Svoboda 2.0.
+ * Один активный способ определяет, какой туннель будет установлен при нажатии "Подключить".
+ *
+ * [available] = false означает, что движок ещё не подключён. Такие режимы
+ * отображаются неактивными с пометкой «в разработке» и не могут быть выбраны.
+ */
+enum class ConnectionMethod(val label: String, val available: Boolean) {
+    AWG("AWG", true),                          // GoBackend + AmneziaWG
+    WARP("WARP", true),                        // Cloudflare WARP
+    DPI_DIRECT("DPI", false),                  // Локальный обход DPI — движок не подключён
+    AUTO("AUTO", false),                       // Автовыбор транспорта — после DPI-1.x
+}
+
 private val VioletGradient = listOf(Color(0xFFC792EA), Color(0xFF9D6BFF), Color(0xFF7C4DFF))
 private val GreenGradient = listOf(GoodGreen, AccentGreen, AccentBlue)
 private val BlueGradient = listOf(Color(0xFF6FA8FF), AccentBlue, Color(0xFF5B6BFF))
@@ -76,8 +94,12 @@ private val BlueGradient = listOf(Color(0xFF6FA8FF), AccentBlue, Color(0xFF5B6BF
  *
  * Центр: неоновая строка статуса; за ней — расходящиеся зелёные круги.
  * Пока идёт подключение — «нейронные» линии. Под статусом — плитки
- * (профиль, IP, страна, ping, график), каждая строка в своей плитке.
+ * (профиль, IP, страна, ping, график, способ подключения), каждая строка в своей плитке.
  * Меню — шторка с плитками и ползунками (серый выкл / зелёный вкл).
+ *
+ * Способ подключения выбирается отдельной строкой под названием профиля.
+ * Доступные режимы: AWG (AmneziaWG), WARP (Cloudflare), DPI_DIRECT (локальный обход),
+ * AUTO (автоматический выбор). Выбор влияет на туннель и трассировку.
  */
 @Composable
 fun HomeScreen(
@@ -117,6 +139,14 @@ fun HomeScreen(
     var mtu by remember { mutableStateOf(prefs.tunnelMtu) }
 
     var ipv6Enabled by remember { mutableStateOf(prefs.ipv6Enabled) }
+
+    // Способ подключения (сохраняется в Prefs между запусками).
+    var connectionMethod by remember {
+        mutableStateOf(
+            ConnectionMethod.values().firstOrNull { it.name == prefs.connectionMethod }
+                ?: ConnectionMethod.AWG,
+        )
+    }
     var dnsText by remember { mutableStateOf(prefs.dnsServers) }
     var showDnsDialog by remember { mutableStateOf(false) }
 
@@ -135,6 +165,13 @@ fun HomeScreen(
                 excludedCount = excludedCount,
                 serverTitle = serverTitle,
                 splitProfileId = splitProfileId,
+                connectionMethod = connectionMethod,
+                onConnectionMethod = {
+                    if (it.available) {
+                        connectionMethod = it
+                        prefs.connectionMethod = it.name
+                    }
+                },
                 onGraphEnabled = {
                     graphEnabled = it
                     prefs.pingGraphEnabled = it
@@ -315,59 +352,76 @@ fun HomeScreen(
                 }
             }
 
-            // Низ: кнопки.
+            // Низ: способ подключения + кнопки в одну линию.
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 20.dp),
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Button(
-                    onClick = { if (connected) onDisconnect() else onConnect() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = when {
-                            busy -> Elevated
-                            connected -> AccentGreen
-                            else -> AccentGreen
-                        },
-                        contentColor = when {
-                            busy -> AccentBlue
-                            connected -> Color(0xFF062018)
-                            else -> Color(0xFF062018)
-                        },
-                    ),
-                ) {
-                    Text(
-                        text = when {
-                            busy -> "ПОДКЛЮЧЕНИЕ…"
-                            connected -> "ОТКЛЮЧИТЬ"
-                            else -> "ПОДКЛЮЧИТЬ"
-                        },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                    )
-                }
+                ConnectionMethodTile(
+                    selected = connectionMethod,
+                    onSelect = {
+                        if (it.available) {
+                            connectionMethod = it
+                            prefs.connectionMethod = it.name
+                        }
+                    },
+                )
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedButton(
-                    onClick = onTest,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color(0xFF3A4B5C)),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
-                        text = "ПРОВЕРИТЬ СВЯЗЬ",
-                        color = Color(0xFFA9B7C6),
-                        fontWeight = FontWeight.Medium,
-                    )
+                    Button(
+                        onClick = { if (connected) onDisconnect() else onConnect() },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = when {
+                                busy -> Elevated
+                                connected -> AccentGreen
+                                else -> AccentGreen
+                            },
+                            contentColor = when {
+                                busy -> AccentBlue
+                                connected -> Color(0xFF062018)
+                                else -> Color(0xFF062018)
+                            },
+                        ),
+                    ) {
+                        Text(
+                            text = when {
+                                busy -> "ПОДКЛЮЧЕНИЕ…"
+                                connected -> "ОТКЛЮЧИТЬ"
+                                else -> "ПОДКЛЮЧИТЬ"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onTest,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFF3A4B5C)),
+                    ) {
+                        Text(
+                            text = "ПРОВЕРИТЬ СВЯЗЬ",
+                            color = Color(0xFFA9B7C6),
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
@@ -410,6 +464,8 @@ private fun DrawerContent(
     excludedCount: Int,
     serverTitle: String?,
     splitProfileId: String,
+    connectionMethod: ConnectionMethod,
+    onConnectionMethod: (ConnectionMethod) -> Unit,
     onGraphEnabled: (Boolean) -> Unit,
     onIntervalSec: (Int) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
@@ -427,7 +483,9 @@ private fun DrawerContent(
             .fillMaxSize()
             .background(Color(0xFF0C121A))
             .statusBarsPadding()
-            .padding(16.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+            .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         val scope = rememberCoroutineScope()
@@ -451,6 +509,8 @@ private fun DrawerContent(
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
+
+        SectionHeader("ОБЩИЕ")
 
         TileRow(
             title = "График пинга",
@@ -476,6 +536,34 @@ private fun DrawerContent(
             opaque = true,
             control = { NeonSwitch(autoConnect, onAutoConnect) },
         )
+
+        SectionHeader("ПОДКЛЮЧЕНИЕ")
+
+        ConnectionMethodTile(
+            selected = connectionMethod,
+            onSelect = onConnectionMethod,
+        )
+
+        if (connectionMethod == ConnectionMethod.AWG) {
+            TileRow(
+                title = "Сервер AmneziaWG",
+                value = serverTitle ?: "не выбран — подключение через WARP",
+                opaque = true,
+                onClick = onOpenServers,
+            )
+        }
+
+        if (connectionMethod.available) {
+            MtuCard(mtu = mtu, onMtu = onMtu)
+        } else {
+            TileRow(
+                title = "Движок ${connectionMethod.label}",
+                value = "не подключён · в разработке",
+                opaque = true,
+            )
+        }
+
+        SectionHeader("SPLIT-TUNNEL")
 
         TileRow(
             title = "Режим split-tunnel",
@@ -514,23 +602,7 @@ private fun DrawerContent(
             },
         )
 
-        TileRow(
-            title = "Сервер AmneziaWG",
-            value = serverTitle ?: "WARP · Cloudflare",
-            opaque = true,
-            onClick = onOpenServers,
-        )
-
-        SliderCard(
-            title = "MTU",
-            valueText = "$mtu",
-            value = mtu.toFloat(),
-            onValueChange = { onMtu(it.toInt().coerceIn(1200, 1420)) },
-            valueRange = 1200f..1420f,
-            minLabel = "1200",
-            maxLabel = "1420",
-            opaque = true,
-        )
+        SectionHeader("СЕТЬ")
 
         TileRow(
             title = "IPv6 через VPN",
@@ -545,6 +617,8 @@ private fun DrawerContent(
             opaque = true,
             onClick = onDnsClick,
         )
+
+        SectionHeader("ПРОЧЕЕ")
 
         TileRow(
             title = "О приложении",
@@ -567,6 +641,196 @@ private fun DrawerContent(
         ) {
             Text("ЗАКРЫТЬ МЕНЮ", color = TextSecondary, fontSize = 13.sp, maxLines = 1)
         }
+    }
+}
+
+/**
+ * MTU: слайдер 1200..1480 + быстрые кнопки с шагом 20 от 1380 до 1480.
+ * Кнопки в одну линию за счёт мелкого шрифта.
+ */
+@Composable
+private fun MtuCard(mtu: Int, onMtu: (Int) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = Elevated,
+        border = BorderStroke(1.dp, Border),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "MTU",
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(text = "$mtu", color = TextSecondary, fontSize = 12.sp)
+            }
+            Slider(
+                value = mtu.toFloat(),
+                onValueChange = { onMtu(it.toInt().coerceIn(1200, 1480)) },
+                valueRange = 1200f..1480f,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("1200", color = TextSecondary, fontSize = 10.sp)
+                Text("1480", color = TextSecondary, fontSize = 10.sp)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                MTU_PRESETS.forEach { value ->
+                    MtuPresetChip(
+                        value = value,
+                        selected = mtu == value,
+                        onClick = { onMtu(value) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val MTU_PRESETS = listOf(1380, 1400, 1420, 1440, 1460, 1480)
+
+@Composable
+private fun MtuPresetChip(
+    value: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) AccentGreen.copy(alpha = 0.18f) else Elevated.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, if (selected) AccentGreen else Border),
+    ) {
+        Text(
+            text = value.toString(),
+            color = if (selected) TextPrimary else TextSecondary,
+            fontSize = 9.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 5.dp),
+        )
+    }
+}
+
+/**
+ * Заголовок секции в меню: настройки сгруппированы по назначению,
+ * чтобы параметры разных способов подключения не смешивались.
+ */
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        color = TextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.5.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+    )
+}
+
+/**
+ * Плитка выбора способа подключения.
+ * AWG и WARP доступны; DPI и AUTO помечены «в разработке» и заблокированы,
+ * пока соответствующие native-движки не подключены.
+ */
+@Composable
+private fun ConnectionMethodTile(
+    selected: ConnectionMethod,
+    onSelect: (ConnectionMethod) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = Elevated.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, Border),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Способ подключения",
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = if (selected.available) selected.label else "${selected.label} · в разработке",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ConnectionMethod.values().forEach { method ->
+                    MethodChip(
+                        label = method.label,
+                        selected = selected == method,
+                        enabled = method.available,
+                        onClick = { onSelect(method) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MethodChip(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val borderColor = when {
+        selected && enabled -> AccentGreen
+        selected -> AccentBlue.copy(alpha = 0.6f)
+        else -> Border
+    }
+    Surface(
+        modifier = modifier.then(
+            if (enabled) Modifier.clickable(onClick = onClick) else Modifier,
+        ),
+        shape = RoundedCornerShape(10.dp),
+        color = when {
+            selected && enabled -> AccentGreen.copy(alpha = 0.16f)
+            selected -> Elevated.copy(alpha = 0.9f)
+            else -> Elevated.copy(alpha = 0.35f)
+        },
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Text(
+            text = label,
+            color = when {
+                !enabled -> TextSecondary.copy(alpha = 0.5f)
+                selected -> TextPrimary
+                else -> TextSecondary
+            },
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+        )
     }
 }
 

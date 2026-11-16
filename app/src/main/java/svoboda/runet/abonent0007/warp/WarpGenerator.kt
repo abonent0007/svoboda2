@@ -23,7 +23,7 @@ object WarpGenerator {
 
     const val REG_URL = "https://api.cloudflareclient.com/v0a2158/reg"
     const val CF_CLIENT_VERSION = "a-6.30-3596"
-    const val MTU = 1240
+    const val MTU = 1420
 
     private val REG_IPS: List<InetAddress> = listOf(
         InetAddress.getByName("104.16.24.84"),

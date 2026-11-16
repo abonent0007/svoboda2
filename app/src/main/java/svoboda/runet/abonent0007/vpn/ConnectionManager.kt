@@ -153,9 +153,11 @@ class ConnectionManager(
         }
         val config = lastGoodConfig ?: store.list().lastOrNull()?.config
             ?: SeedCatalog.defaultSeed(seeds)?.raw_config
-            ?: return false
         controller.currentProfileId = "warp"
-        return controller.connect(config)
+        if (config != null && controller.connect(config)) return true
+        // Сохранённый конфиг не прошёл (устаревшая WARP-регистрация/смена сети):
+        // перерегистрируемся через Cloudflare, а не зацикливаемся на мёртвом конфиге.
+        return connectWarpWithGeneration()
     }
 
     /** Переподключение с текущим конфигом (для применения настроек). */

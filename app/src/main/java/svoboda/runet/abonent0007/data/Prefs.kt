@@ -22,10 +22,10 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("auto_connect", false)
         set(value) = prefs.edit().putBoolean("auto_connect", value).apply()
 
-    /** MTU туннеля (1200..1420). */
+    /** MTU туннеля (1200..1480), по умолчанию 1420. */
     var tunnelMtu: Int
-        get() = prefs.getInt("tunnel_mtu", 1240).coerceIn(1_200, 1_420)
-        set(value) = prefs.edit().putInt("tunnel_mtu", value.coerceIn(1_200, 1_420)).apply()
+        get() = prefs.getInt("tunnel_mtu", 1420).coerceIn(1_200, 1_480)
+        set(value) = prefs.edit().putInt("tunnel_mtu", value.coerceIn(1_200, 1_480)).apply()
 
     /** Включить IPv6 через туннель (по умолчанию выкл). */
     var ipv6Enabled: Boolean
@@ -78,4 +78,12 @@ class Prefs(context: Context) {
     var activeServerId: String
         get() = prefs.getString("active_server_id", "").orEmpty()
         set(value) = prefs.edit().putString("active_server_id", value).apply()
+
+    /**
+     * Выбранный способ подключения: AWG | WARP | DPI_DIRECT | AUTO.
+     * Хранится как имя enum ConnectionMethod; неизвестное значение → AWG.
+     */
+    var connectionMethod: String
+        get() = prefs.getString("connection_method", "AWG").orEmpty()
+        set(value) = prefs.edit().putString("connection_method", value).apply()
 }

@@ -52,6 +52,13 @@ class MainActivity : ComponentActivity() {
             var showAddServer by remember { mutableStateOf(false) }
 
             fun doConnect(scope: CoroutineScope) {
+                // Выбранный на главном экране способ подключения:
+                // WARP — принудительно идём через WARP (снимаем выбранный AWG-сервер),
+                // AWG — используем активный сервер, если он есть (иначе WARP как fallback).
+                when (AppGraph.prefs.connectionMethod) {
+                    "WARP" -> AppGraph.prefs.activeServerId = ""
+                    "AWG" -> Unit
+                }
                 scope.launch {
                     reconnect.userConnect(true)
                 }
@@ -151,7 +158,7 @@ class MainActivity : ComponentActivity() {
                             showServers = false
                             val intent = controller.prepareVpn(this@MainActivity)
                             if (intent != null) {
-                                consentLauncher.launch(intent)
+                                consentLauncher.launch(intent as android.content.Intent)
                             } else {
                                 scope.launch { reconnect.userConnect(true) }
                             }
