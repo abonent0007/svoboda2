@@ -18,3 +18,17 @@ release.keystore
 # OS
 Thumbs.db
 .DS_Store
+
+# Build outputs / logs
+.kotlin/
+*.log
+ui_*.xml
+
+# Test artifacts
+docs/shots/shot_*.png
+docs/shots/review_*.png
+
+# Native build caches
+.cxx/
+third_party/**/build/
+

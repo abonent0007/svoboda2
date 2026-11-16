@@ -1,0 +1,80 @@
+﻿{
+    "generatedUtc":  "2026-11-16T02:57:09.7301189Z",
+    "note":  "Source snapshots are from immutable commit SHA archives. Git metadata is not included.",
+    "sources":  [
+                    {
+                        "repository":  "hufrea/byedpi",
+                        "commit":  "ba532298de7b28cfe854aea83d061369d13ca290",
+                        "destination":  "C:\\Users\\Abonen0007\\Documents\\svoboda2\\third_party\\byedpi",
+                        "archiveUrl":  "https://github.com/hufrea/byedpi/archive/ba532298de7b28cfe854aea83d061369d13ca290.zip",
+                        "archiveSha256":  null,
+                        "extractedFileCount":  37,
+                        "licenseFiles":  [
+                                             "LICENSE"
+                                         ],
+                        "acquisitionStatus":  "skipped-existing"
+                    },
+                    {
+                        "repository":  "heiher/hev-socks5-tunnel",
+                        "commit":  "4d6c334dbfb68a79d1970c2744e62d09f71df12f",
+                        "destination":  "C:\\Users\\Abonen0007\\Documents\\svoboda2\\third_party\\hev-socks5-tunnel",
+                        "archiveUrl":  "https://github.com/heiher/hev-socks5-tunnel/archive/4d6c334dbfb68a79d1970c2744e62d09f71df12f.zip",
+                        "archiveSha256":  null,
+                        "extractedFileCount":  108,
+                        "licenseFiles":  [
+                                             "LICENSE",
+                                             "src\\core\\LICENSE",
+                                             "third-part\\wintun\\LICENSE.txt"
+                                         ],
+                        "acquisitionStatus":  "skipped-existing"
+                    },
+                    {
+                        "repository":  "heiher/hev-socks5-core",
+                        "commit":  "4be2e621813ba0315cfacd995bf501bde91d6996",
+                        "destination":  "C:\\Users\\Abonen0007\\Documents\\svoboda2\\third_party\\hev-socks5-tunnel\\src\\core",
+                        "archiveUrl":  "https://github.com/heiher/hev-socks5-core/archive/4be2e621813ba0315cfacd995bf501bde91d6996.zip",
+                        "archiveSha256":  null,
+                        "extractedFileCount":  45,
+                        "licenseFiles":  [
+                                             "LICENSE"
+                                         ],
+                        "acquisitionStatus":  "skipped-existing"
+                    },
+                    {
+                        "repository":  "heiher/hev-task-system",
+                        "commit":  "8d83bbbf79557138726c8ee5a5fae99cbb978d61",
+                        "destination":  "C:\\Users\\Abonen0007\\Documents\\svoboda2\\third_party\\hev-socks5-tunnel\\third-part\\hev-task-system",
+                        "archiveUrl":  "https://github.com/heiher/hev-task-system/archive/8d83bbbf79557138726c8ee5a5fae99cbb978d61.zip",
+                        "archiveSha256":  "2d5b3dbd5a66c963747736453811027f0519a8a53b97b4653b0fdd8b8a897a25",
+                        "extractedFileCount":  166,
+                        "licenseFiles":  [
+                                             "LICENSE"
+                                         ],
+                        "acquisitionStatus":  "downloaded"
+                    },
+                    {
+                        "repository":  "heiher/lwip",
+                        "commit":  "07dbf162c718cc78ddedb9e67c6ebd17065eaf13",
+                        "destination":  "C:\\Users\\Abonen0007\\Documents\\svoboda2\\third_party\\hev-socks5-tunnel\\third-part\\lwip",
+                        "archiveUrl":  "https://github.com/heiher/lwip/archive/07dbf162c718cc78ddedb9e67c6ebd17065eaf13.zip",
+                        "archiveSha256":  "004c654c230930319d9a7a4e3a70f6f82667758cc9a804e8ee9f3696c6412a64",
+                        "extractedFileCount":  255,
+                        "licenseFiles":  [
+                                             "LICENSE"
+                                         ],
+                        "acquisitionStatus":  "downloaded"
+                    },
+                    {
+                        "repository":  "heiher/yaml",
+                        "commit":  "efa36117a8646d26d12b58e05bac472d7854a70d",
+                        "destination":  "C:\\Users\\Abonen0007\\Documents\\svoboda2\\third_party\\hev-socks5-tunnel\\third-part\\yaml",
+                        "archiveUrl":  "https://github.com/heiher/yaml/archive/efa36117a8646d26d12b58e05bac472d7854a70d.zip",
+                        "archiveSha256":  "211f8d5b67942af1108a5655d309ed32c1df51b19c2444a58ddf5b188405e8cc",
+                        "extractedFileCount":  20,
+                        "licenseFiles":  [
+                                             "License"
+                                         ],
+                        "acquisitionStatus":  "downloaded"
+                    }
+                ]
+}
