@@ -40,3 +40,8 @@ scripts/gh_*.ps1
 # Local APK snapshots for upgrade tests
 /dist/
 
+
+# Local helper scripts and host test builds
+scripts/git_commit_*.ps1
+third_party/byedpi/dist/host/
+
