@@ -67,6 +67,7 @@ import svoboda.runet.abonent0007.ui.theme.Border
 import svoboda.runet.abonent0007.ui.theme.Elevated
 import svoboda.runet.abonent0007.ui.theme.ErrorRed
 import svoboda.runet.abonent0007.ui.theme.GoodGreen
+import svoboda.runet.abonent0007.ui.method.MethodSettingsDialog
 import svoboda.runet.abonent0007.ui.theme.TextPrimary
 import svoboda.runet.abonent0007.ui.theme.TextSecondary
 import svoboda.runet.abonent0007.vpn.VpnPhase
@@ -148,6 +149,9 @@ fun HomeScreen(
                 ?: ConnectionMethod.AWG,
         )
     }
+
+    // Открытое подменю тонких настроек метода (null = закрыто).
+    var methodSettingsFor by remember { mutableStateOf<ConnectionMethod?>(null) }
     var dnsText by remember { mutableStateOf(prefs.dnsServers) }
     var showDnsDialog by remember { mutableStateOf(false) }
 
@@ -178,6 +182,7 @@ fun HomeScreen(
                     autoUpdate = it
                     prefs.autoUpdateEnabled = it
                 },
+                onOpenMethodSettings = { methodSettingsFor = it },
                 onGraphEnabled = {
                     graphEnabled = it
                     prefs.pingGraphEnabled = it
@@ -456,6 +461,22 @@ fun HomeScreen(
             },
         )
     }
+
+    methodSettingsFor?.let { method ->
+        MethodSettingsDialog(
+            method = method,
+            mtu = mtu,
+            onMtu = {
+                mtu = it
+                prefs.tunnelMtu = it
+            },
+            onOpenServers = {
+                methodSettingsFor = null
+                onOpenServers()
+            },
+            onDismiss = { methodSettingsFor = null },
+        )
+    }
 }
 
 @Composable
@@ -474,6 +495,7 @@ private fun DrawerContent(
     onConnectionMethod: (ConnectionMethod) -> Unit,
     autoUpdate: Boolean,
     onAutoUpdate: (Boolean) -> Unit,
+    onOpenMethodSettings: (ConnectionMethod) -> Unit,
     onGraphEnabled: (Boolean) -> Unit,
     onIntervalSec: (Int) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
@@ -575,6 +597,22 @@ private fun DrawerContent(
                 title = "Движок ${connectionMethod.label}",
                 value = "не подключён · в разработке",
                 opaque = true,
+            )
+        }
+
+        SectionHeader("НАСТРОЙКИ МЕТОДОВ")
+
+        ConnectionMethod.values().forEach { method ->
+            TileRow(
+                title = "${method.label} · тонкие настройки",
+                value = when (method) {
+                    ConnectionMethod.AWG -> "серверы, генератор .conf, MTU"
+                    ConnectionMethod.WARP -> "регистрация, endpoint, MTU"
+                    ConnectionMethod.DPI_DIRECT -> "стратегии BDP, SOCKS-порт, генератор"
+                    ConnectionMethod.AUTO -> "политика и резервный транспорт"
+                },
+                opaque = true,
+                onClick = { onOpenMethodSettings(method) },
             )
         }
 

@@ -94,4 +94,29 @@ class Prefs(context: Context) {
     var autoUpdateEnabled: Boolean
         get() = prefs.getBoolean("auto_update_enabled", true)
         set(value) = prefs.edit().putBoolean("auto_update_enabled", value).apply()
+
+    /** Выбранная стратегия ByeDPI (BDP-00 — эталон). */
+    var dpiStrategyId: String
+        get() = prefs.getString("dpi_strategy_id", "BDP-00").orEmpty()
+        set(value) = prefs.edit().putString("dpi_strategy_id", value).apply()
+
+    /** Порт локального SOCKS5 для DPI-движка. */
+    var dpiSocksPort: Int
+        get() = prefs.getInt("dpi_socks_port", 1080).coerceIn(1, 65535)
+        set(value) = prefs.edit().putInt("dpi_socks_port", value.coerceIn(1, 65535)).apply()
+
+    /** Стратегия, собранная генератором (argv для ciadpi). */
+    var dpiCustomStrategy: String
+        get() = prefs.getString("dpi_custom_strategy", "").orEmpty()
+        set(value) = prefs.edit().putString("dpi_custom_strategy", value).apply()
+
+    /** AUTO: предпочитать WARP (иначе AWG). */
+    var autoPreferWarp: Boolean
+        get() = prefs.getBoolean("auto_prefer_warp", false)
+        set(value) = prefs.edit().putBoolean("auto_prefer_warp", value).apply()
+
+    /** AUTO: переключаться на резервный транспорт при отказе. */
+    var autoFallback: Boolean
+        get() = prefs.getBoolean("auto_fallback", true)
+        set(value) = prefs.edit().putBoolean("auto_fallback", value).apply()
 }
