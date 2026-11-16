@@ -727,6 +727,7 @@ private fun DpiSettings(onOpenBenchmark: () -> Unit = {}) {
 @Composable
 private fun AutoSettings() {
     val prefs = AppGraph.prefs
+    val scope = rememberCoroutineScope()
     var transportOrder by remember { mutableStateOf(prefs.autoTransportOrder) }
     var countryPriority by remember { mutableStateOf(prefs.autoCountryPriority) }
     var strict by remember { mutableStateOf(prefs.autoCountryStrict) }
@@ -812,6 +813,31 @@ private fun AutoSettings() {
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+    var dcStatus by remember { mutableStateOf(AppGraph.manager.autoStatus) }
+    TileRow(
+        title = "Telegram DC (MTProto)",
+        value = dcStatus ?: "не проверялось",
+        opaque = true,
+        control = {
+            NeonSwitch(prefs.autoTelegramViaVpn) {
+                prefs.autoTelegramViaVpn = it
+            }
+        },
+    )
+    TextButton(onClick = {
+        scope.launch {
+            val viaSocks = prefs.connectionMethod == "DPI_DIRECT"
+            val status = svoboda.runet.abonent0007.net.TelegramDc.check(
+                viaSocks = viaSocks,
+                socksPort = prefs.dpiSocksPort,
+            )
+            dcStatus = if (status.reachable) {
+                "доступны (${status.reachableIps.firstOrNull()})"
+            } else {
+                "недоступны (${status.error ?: "нет ответа"}) — нужен AWG/WARP"
+            }
+        }
+    }) { Text("ПРОВЕРИТЬ DC", fontSize = 12.sp) }
     Text(
         text = "Страна WARP = ближайший PoP Cloudflare и не гарантируется: у профилей измерение " +
             "фактической страны (после подключения), у своих AWG-серверов страна задаётся вами. " +

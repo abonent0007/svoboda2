@@ -12,6 +12,7 @@ import svoboda.runet.abonent0007.warp.GeneratedProfile
 import svoboda.runet.abonent0007.warp.GeneratedProfileStore
 import svoboda.runet.abonent0007.warp.SeedCatalog
 import svoboda.runet.abonent0007.net.NetProbe
+import svoboda.runet.abonent0007.net.TelegramDc
 import svoboda.runet.abonent0007.split.ServiceCatalog
 import svoboda.runet.abonent0007.split.SplitTunnelConfig
 import svoboda.runet.abonent0007.split.SplitTunnelMode
@@ -319,14 +320,36 @@ class ConnectionManager(
             return false
         }
 
+        var dpiFallback = false
         for (candidate in candidates) {
-            if (candidate()) {
-                lastAutoSwitchAt = System.currentTimeMillis()
-                return true
+            if (!candidate()) continue
+            val isDpi = controller.currentProfileId == "dpi"
+            if (isDpi && prefs.autoTelegramViaVpn) {
+                // Telegram-приложение ходит к IP-адресам DC: DPI-стратегии их не открывают.
+                // Если DC недоступны — ищем транспорт AWG/WARP, и только потом откатываемся на DPI.
+                val dc = TelegramDc.check(viaSocks = true, socksPort = prefs.dpiSocksPort)
+                if (!dc.reachable) {
+                    autoStatus = "Telegram DC недоступны через DPI (${dc.error ?: "нет ответа"}) — ищем AWG/WARP"
+                    if (!dpiFallback) {
+                        dpiFallback = true
+                        continue
+                    }
+                } else {
+                    autoStatus = "Telegram DC доступны"
+                }
             }
+            lastAutoSwitchAt = System.currentTimeMillis()
+            return true
+        }
+        if (dpiFallback) {
+            autoStatus = "Telegram DC недоступны: подключён DPI (AWG/WARP не найден)"
         }
         return false
     }
+
+    /** Статус AUTO для UI (последняя причина выбора/отказа). */
+    @Volatile
+    var autoStatus: String? = null
 
     /** Время последнего автоматического переключения (антидребезг). */
     private var lastAutoSwitchAt: Long = 0L

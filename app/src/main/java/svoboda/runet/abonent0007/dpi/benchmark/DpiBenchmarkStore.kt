@@ -12,9 +12,21 @@ data class DpiStrategyResult(
     val strategyArgs: String,
     val connected: Boolean,
     val domains: List<DpiDomainTestResult>,
+    val route: BenchRoute = BenchRoute.SOCKS,
 ) {
-    val successfulDomains: Int get() = domains.count { it.success }
+    val successfulDomains: Int get() = domains.count { it.networkSuccess }
     val failedDomains: Int get() = domains.size - successfulDomains
+
+    /** Сеть доступна, но сервер ограничил HTTP (401/403/429) — не полный успех. */
+    val limitedDomains: Int get() = domains.count { it.httpLimited }
+
+    /** Полный успех: сеть доступна и получен чистый HTTP-ответ. */
+    val cleanDomains: Int get() = domains.count { it.cleanSuccess }
+
+    /** Успехи по категориям (напр. "Видео" → 2). */
+    val byCategory: Map<String, Int>
+        get() = domains.groupBy { it.domain.category }
+            .mapValues { (_, list) -> list.count { it.networkSuccess } }
     val successRate: Double
         get() = if (domains.isEmpty()) 0.0 else domains.count { it.success }.toDouble() / domains.size
     val medianHttpMs: Long?
@@ -40,7 +52,7 @@ class DpiBenchmarkStore(context: Context) :
     SQLiteOpenHelper(context.applicationContext, "dpi_benchmark.db", null, VERSION) {
 
     companion object {
-        private const val VERSION = 1
+        private const val VERSION = 2
         const val STATUS_RUNNING = "running"
         const val STATUS_FINISHED = "finished"
         const val STATUS_STOPPED = "stopped"
@@ -64,7 +76,16 @@ class DpiBenchmarkStore(context: Context) :
                 best_strategy_id TEXT,
                 original_strategy_id TEXT,
                 original_custom_args TEXT,
-                original_mapdns INTEGER DEFAULT 0
+                original_mapdns INTEGER DEFAULT 0,
+                campaign_seed INTEGER,
+                strategy_order TEXT,
+                app_version TEXT,
+                android_api INTEGER,
+                device_model TEXT,
+                carrier TEXT,
+                mtu INTEGER,
+                dns_preset TEXT,
+                exit_country TEXT
             )
             """.trimIndent()
         )
@@ -84,7 +105,9 @@ class DpiBenchmarkStore(context: Context) :
                 success_rate REAL DEFAULT 0,
                 median_http_ms INTEGER,
                 median_tls_ms INTEGER,
-                error_count INTEGER DEFAULT 0
+                error_count INTEGER DEFAULT 0,
+                route_type TEXT DEFAULT 'SOCKS',
+                outcome_summary TEXT
             )
             """.trimIndent()
         )
@@ -108,7 +131,9 @@ class DpiBenchmarkStore(context: Context) :
                 http_latency_ms INTEGER,
                 retry_count INTEGER DEFAULT 0,
                 error_type TEXT,
-                error_message TEXT
+                error_message TEXT,
+                route_type TEXT DEFAULT 'SOCKS',
+                outcome TEXT
             )
             """.trimIndent()
         )
@@ -128,7 +153,9 @@ class DpiBenchmarkStore(context: Context) :
                 http_ok INTEGER DEFAULT 0,
                 http_ms INTEGER,
                 error_type TEXT,
-                error_message TEXT
+                error_message TEXT,
+                route_type TEXT DEFAULT 'SOCKS',
+                dns_mode TEXT DEFAULT 'SOCKS_REMOTE'
             )
             """.trimIndent()
         )
@@ -151,6 +178,14 @@ class DpiBenchmarkStore(context: Context) :
         originalStrategyId: String,
         originalCustomArgs: String,
         originalMapdns: Boolean,
+        campaignSeed: Long = 0L,
+        strategyOrder: List<String> = emptyList(),
+        appVersion: String = "",
+        androidApi: Int = 0,
+        deviceModel: String = "",
+        carrier: String = "",
+        mtu: Int = 0,
+        dnsPreset: String = "",
     ): Long {
         val values = ContentValues().apply {
             put("started_at", startedAt)
@@ -163,6 +198,14 @@ class DpiBenchmarkStore(context: Context) :
             put("original_strategy_id", originalStrategyId)
             put("original_custom_args", originalCustomArgs)
             put("original_mapdns", if (originalMapdns) 1 else 0)
+            put("campaign_seed", campaignSeed)
+            put("strategy_order", strategyOrder.joinToString(","))
+            put("app_version", appVersion)
+            put("android_api", androidApi)
+            put("device_model", deviceModel)
+            put("carrier", carrier)
+            put("mtu", mtu)
+            put("dns_preset", dnsPreset)
         }
         return writableDatabase.insertOrThrow("test_session", null, values)
     }
@@ -200,6 +243,8 @@ class DpiBenchmarkStore(context: Context) :
             put("median_http_ms", result.medianHttpMs)
             put("median_tls_ms", result.medianTlsMs)
             put("error_count", result.errorCount)
+            put("route_type", result.route.name)
+            put("outcome_summary", result.domains.groupingBy { it.outcome.name }.eachCount().toString())
         }
         val testId = writableDatabase.insertOrThrow("strategy_test", null, values)
         result.domains.forEach { domain ->
@@ -218,9 +263,11 @@ class DpiBenchmarkStore(context: Context) :
                 put("http_status", domain.attempts.firstNotNullOfOrNull { it.httpStatus })
                 put("http_success", if (domain.success) 1 else 0)
                 put("http_latency_ms", domain.medianHttpMs)
-                put("retry_count", domain.attempts.count { !it.networkOk(domain.domain) })
+                put("retry_count", domain.attempts.count { !it.transportOk(domain.domain) })
                 put("error_type", domain.errorType)
                 put("error_message", domain.errorMessage)
+                put("route_type", domain.route.name)
+                put("outcome", domain.outcome.name)
             }
             val domainId = writableDatabase.insertOrThrow("domain_test", null, domainValues)
             domain.attempts.forEach { attempt ->
@@ -238,6 +285,8 @@ class DpiBenchmarkStore(context: Context) :
                     put("http_ms", attempt.httpMs)
                     put("error_type", attempt.errorType)
                     put("error_message", attempt.errorMessage)
+                    put("route_type", attempt.route.name)
+                    put("dns_mode", if (attempt.route == BenchRoute.SOCKS) "SOCKS_REMOTE" else "LOCAL")
                 })
             }
         }

@@ -105,6 +105,21 @@ class Prefs(context: Context) {
         get() = prefs.getInt("dpi_socks_port", 1080).coerceIn(1, 65535)
         set(value) = prefs.edit().putInt("dpi_socks_port", value.coerceIn(1, 65535)).apply()
 
+    /** Предыдущая пользовательская DPI-стратегия (для отката). */
+    var dpiCustomStrategyPrev: String
+        get() = prefs.getString("dpi_custom_strategy_prev", "") ?: ""
+        set(value) = prefs.edit().putString("dpi_custom_strategy_prev", value).apply()
+
+    /** Число попыток на домен в бенчмарке: 3 — скрининг, 10 — валидация, 20 — финал. */
+    var dpiBenchmarkAttempts: Int
+        get() = prefs.getInt("dpi_benchmark_attempts", 3).coerceIn(1, 20)
+        set(value) = prefs.edit().putInt("dpi_benchmark_attempts", value.coerceIn(1, 20)).apply()
+
+    /** Фильтр стратегий бенчмарка (пусто = весь каталог). Нужен для повторной проверки победителей. */
+    var dpiBenchmarkStrategyIds: Set<String>
+        get() = prefs.getStringSet("dpi_benchmark_strategy_ids", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("dpi_benchmark_strategy_ids", value).apply()
+
     /** DNS через туннель (HEV mapdns): домены резолвятся внутри обхода, соединения идут по домену. */
     var dpiMapDns: Boolean
         get() = prefs.getBoolean("dpi_map_dns", false)
@@ -130,6 +145,11 @@ class Prefs(context: Context) {
     var autoCountryStrict: Boolean
         get() = prefs.getBoolean("auto_country_strict", false)
         set(value) = prefs.edit().putBoolean("auto_country_strict", value).apply()
+
+    /** AUTO: если DC Telegram недоступны через DPI — выбирать AWG/WARP. */
+    var autoTelegramViaVpn: Boolean
+        get() = prefs.getBoolean("auto_telegram_via_vpn", true)
+        set(value) = prefs.edit().putBoolean("auto_telegram_via_vpn", value).apply()
 
     /** AUTO: минимальное время удержания выбранного транспорта, мин (антидребезг). */
     var autoHoldMinutes: Int

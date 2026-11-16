@@ -3,6 +3,7 @@ package svoboda.runet.abonent0007.dpi.benchmark
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,8 +16,8 @@ import kotlinx.coroutines.withContext
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.dpi.DPI_CATALOG
 import svoboda.runet.abonent0007.dpi.DpiEngine
-import java.net.InetSocketAddress
-import java.net.Socket
+import svoboda.runet.abonent0007.dpi.DpiStrategy
+import java.net.InetAddress
 import kotlin.random.Random
 
 /** Состояние экрана/сессии бенчмарка. */
@@ -37,6 +38,8 @@ sealed interface DpiBenchmarkState {
         val currentDomain: String?,
         val currentAttempt: DpiAttemptResult?,
         val elapsedMs: Long,
+        val route: BenchRoute = BenchRoute.SOCKS,
+        val baselineDone: Boolean = false,
     ) : DpiBenchmarkState
 
     data class Paused(val running: Running, val reason: String) : DpiBenchmarkState
@@ -44,6 +47,7 @@ sealed interface DpiBenchmarkState {
     data class Finished(
         val sessionId: Long,
         val results: List<DpiStrategyResult>,
+        val baseline: Map<String, DpiDomainTestResult>,
         val best: DpiStrategyResult?,
         val appliedStrategyId: String? = null,
     ) : DpiBenchmarkState
@@ -54,10 +58,12 @@ sealed interface DpiBenchmarkState {
 /**
  * Менеджер сессии бенчмарка.
  *
- * Ключевое решение: между стратегиями перезапускается ТОЛЬКО ciadpi
- * (Android VPNService и HEV остаются поднятыми → нет системных разрывов).
- * Исходная конфигурация стратегии снимается до старта и восстанавливается
- * при остановке/ошибке.
+ * Методология (по ревью GPT):
+ *  - один campaignSeed на сессию: порядок стратегий перемешан, и ВСЕ стратегии
+ *    внутри раунда идут по ОДНОМУ И ТОМУ ЖЕ порядку доменов → сравнение честное;
+ *  - DIRECT-baseline (без обхода) меряется до раунда, повторно каждые ~6 стратегий
+ *    и в конце — видно, что даёт обход (gain) и что он ломает (регрессии);
+ *  - число попыток на домен настраивается (3 — скрининг, 10 — валидация, 20 — финал).
  */
 class DpiBenchmarkManager(
     private val context: Context,
@@ -138,25 +144,41 @@ class DpiBenchmarkManager(
         originalCustomArgs = prefs.dpiCustomStrategy
         originalMapDns = prefs.dpiMapDns
 
-        val networkType = currentNetworkType()
+        val campaignSeed = System.nanoTime()
+        val filter = prefs.dpiBenchmarkStrategyIds
+        val catalog = (if (filter.isEmpty()) DPI_CATALOG else DPI_CATALOG.filter { filter.contains(it.id) })
+            .shuffled(Random(campaignSeed))
+        val domainOrder = domains.shuffled(Random(campaignSeed xor 0x5DEECE66DL))
+
+        val attempts = prefs.dpiBenchmarkAttempts.coerceIn(1, 20)
+        val tester = DpiDomainTester(socksPort = prefs.dpiSocksPort.coerceIn(1, 65535), attemptsPerDomain = attempts)
+
         sessionId = store.createSession(
             startedAt = System.currentTimeMillis(),
-            networkType = networkType,
+            networkType = currentNetworkType(),
             mapdnsEnabled = prefs.dpiMapDns,
-            selectedDomains = domains.map { it.id },
-            totalStrategies = DPI_CATALOG.size,
+            selectedDomains = domainOrder.map { it.id },
+            totalStrategies = catalog.size,
             originalStrategyId = originalStrategyId,
             originalCustomArgs = originalCustomArgs,
             originalMapdns = originalMapDns,
+            campaignSeed = campaignSeed,
+            strategyOrder = catalog.map { it.id },
+            appVersion = appVersion(),
+            androidApi = Build.VERSION.SDK_INT,
+            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
+            carrier = carrierName(),
+            mtu = prefs.tunnelMtu,
+            dnsPreset = prefs.dnsServers.ifBlank { "1.1.1.1" },
         )
         onTestingModeChanged(true)
 
-        val tester = DpiDomainTester(socksPort = prefs.dpiSocksPort.coerceIn(1, 65535))
-        val results = ArrayList<DpiStrategyResult>()
+        val results = ArrayList<DpiStrategyResult>(catalog.size)
+        var baseline = measureBaseline(tester, domainOrder)
         val sessionStart = System.currentTimeMillis()
 
         try {
-            for ((index, strategy) in DPI_CATALOG.withIndex()) {
+            for ((index, strategy) in catalog.withIndex()) {
                 if (stopped) break
                 while (paused && !stopped) delay(300)
                 if (stopped) break
@@ -180,51 +202,52 @@ class DpiBenchmarkManager(
                     delay(250)
                 }
                 if (!ready) {
-                    _state.value = DpiBenchmarkState.Failed("Стратегия ${strategy.id}: ciadpi не поднялся")
+                    _state.value = DpiBenchmarkState.Preparing("Стратегия ${strategy.id}: ciadpi не поднялся, пропуск")
                     continue
                 }
-                delay(1_000) // стабилизация
+                delay(1_000) // стабилизация + прогрев SOCKS
 
-                val shuffled = domains.shuffled(Random(index * 31L + 7L))
                 var successful = 0
                 var failed = 0
-                val domainResults = ArrayList<DpiDomainTestResult>(shuffled.size)
+                val domainResults = ArrayList<DpiDomainTestResult>(domainOrder.size)
 
-                for ((domainIndex, domain) in shuffled.withIndex()) {
+                for ((domainIndex, domain) in domainOrder.withIndex()) {
                     if (stopped) break
                     while (paused && !stopped) delay(300)
                     if (stopped) break
 
                     _state.value = DpiBenchmarkState.Running(
                         strategyIndex = index + 1,
-                        totalStrategies = DPI_CATALOG.size,
+                        totalStrategies = catalog.size,
                         strategyId = strategy.id,
                         strategyName = strategy.name,
                         domainsChecked = domainIndex,
-                        totalDomains = shuffled.size,
+                        totalDomains = domainOrder.size,
                         successful = successful,
                         failed = failed,
                         currentDomain = domain.domain,
                         currentAttempt = null,
                         elapsedMs = System.currentTimeMillis() - sessionStart,
+                        baselineDone = true,
                     )
 
-                    val result = tester.test(domain)
+                    val result = tester.test(domain, BenchRoute.SOCKS)
                     domainResults += result
-                    if (result.success) successful++ else failed++
+                    if (result.networkSuccess) successful++ else failed++
 
                     _state.value = DpiBenchmarkState.Running(
                         strategyIndex = index + 1,
-                        totalStrategies = DPI_CATALOG.size,
+                        totalStrategies = catalog.size,
                         strategyId = strategy.id,
                         strategyName = strategy.name,
                         domainsChecked = domainIndex + 1,
-                        totalDomains = shuffled.size,
+                        totalDomains = domainOrder.size,
                         successful = successful,
                         failed = failed,
                         currentDomain = domain.domain,
                         currentAttempt = result.attempts.lastOrNull(),
                         elapsedMs = System.currentTimeMillis() - sessionStart,
+                        baselineDone = true,
                     )
                 }
 
@@ -234,6 +257,7 @@ class DpiBenchmarkManager(
                     strategyArgs = strategy.args,
                     connected = connected && ready,
                     domains = domainResults,
+                    route = BenchRoute.SOCKS,
                 )
                 results += strategyResult
                 store.insertStrategyResult(sessionId, strategyResult, strategyStart, System.currentTimeMillis())
@@ -241,9 +265,16 @@ class DpiBenchmarkManager(
                     sessionId,
                     results.size,
                     DpiBenchmarkStore.STATUS_RUNNING,
-                    DpiStrategyRanker.best(results)?.strategyId,
+                    DpiStrategyRanker.best(results, baseline)?.strategyId,
                 )
+
+                // Периодический DIRECT-контроль: сеть могла измениться за прогон.
+                if ((index + 1) % 6 == 0 && index + 1 < catalog.size) {
+                    baseline = measureBaseline(tester, domainOrder)
+                }
             }
+            // Финальный DIRECT-замер.
+            baseline = measureBaseline(tester, domainOrder)
         } finally {
             onTestingModeChanged(false)
             if (stopped) {
@@ -251,13 +282,37 @@ class DpiBenchmarkManager(
                 restoreOriginalConfig()
                 _state.value = DpiBenchmarkState.Failed("Остановлено пользователем. Исходные настройки восстановлены.")
             } else {
-                val ranked = DpiStrategyRanker.rank(results)
+                val ranked = DpiStrategyRanker.rank(results, baseline)
                 val best = ranked.firstOrNull()
                 store.finishSession(sessionId, DpiBenchmarkStore.STATUS_FINISHED, best?.strategyId)
                 restoreOriginalConfig()
-                _state.value = DpiBenchmarkState.Finished(sessionId, ranked, best)
+                _state.value = DpiBenchmarkState.Finished(sessionId, ranked, baseline, best)
             }
         }
+    }
+
+    /** DIRECT-baseline: те же домены и тот же клиент, но напрямую (без SOCKS/ciadpi). */
+    private suspend fun measureBaseline(
+        tester: DpiDomainTester,
+        domains: List<DpiTestDomain>,
+    ): Map<String, DpiDomainTestResult> {
+        _state.value = DpiBenchmarkState.Preparing("Замер DIRECT (без обхода) — базовая линия")
+        val map = LinkedHashMap<String, DpiDomainTestResult>()
+        for (domain in domains) {
+            if (stopped) break
+            map[domain.id] = tester.test(domain, BenchRoute.DIRECT)
+        }
+        // Baseline — отдельный тип результата в журнале, а не «стратегия с пустыми аргументами».
+        val baselineResult = DpiStrategyResult(
+            strategyId = "DIRECT",
+            strategyName = "Прямое подключение (baseline)",
+            strategyArgs = "",
+            connected = true,
+            domains = map.values.toList(),
+            route = BenchRoute.DIRECT,
+        )
+        store.insertStrategyResult(sessionId, baselineResult, System.currentTimeMillis(), System.currentTimeMillis())
+        return map
     }
 
     /** Возврат исходной конфигурации стратегии (и перезапуск ciadpi с ней). */
@@ -268,12 +323,10 @@ class DpiBenchmarkManager(
         runCatching { engine.restartWithCurrentStrategy() }
     }
 
-    /** Контрольный домен: прямой TCP из нашего uid (мимо туннеля) — проверка живости сети. */
+    /** Контрольный домен: прямой TCP до 1.1.1.1:443 из нашего uid. */
     private fun controlProbe(): Boolean = try {
-        Socket().use { s ->
-            s.connect(InetSocketAddress("1.1.1.1", 443), 3_000)
-            true
-        }
+        java.net.Socket().use { it.connect(java.net.InetSocketAddress("1.1.1.1", 443), 3_000) }
+        true
     } catch (_: Exception) {
         false
     }
@@ -288,4 +341,17 @@ class DpiBenchmarkManager(
             else -> "unknown"
         }
     }
+
+    private fun carrierName(): String = runCatching {
+        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        @Suppress("DEPRECATION")
+        tm.networkOperatorName.orEmpty()
+    }.getOrDefault("")
+
+    private fun appVersion(): String = runCatching {
+        val pkg = context.packageManager.getPackageInfo(context.packageName, 0)
+        "${pkg.versionName} (${pkg.versionCode})"
+    }.getOrDefault("")
+
+    private fun strategyOrderPreview(catalog: List<DpiStrategy>): String = catalog.joinToString(",") { it.id }
 }

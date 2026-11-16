@@ -44,6 +44,7 @@ import svoboda.runet.abonent0007.AppGraph
 import svoboda.runet.abonent0007.dpi.benchmark.DpiBenchmarkState
 import svoboda.runet.abonent0007.dpi.benchmark.DpiDomainCatalog
 import svoboda.runet.abonent0007.dpi.benchmark.DpiStrategyRanker
+import svoboda.runet.abonent0007.dpi.benchmark.DpiDomainTestResult
 import svoboda.runet.abonent0007.ui.theme.AccentGreen
 import svoboda.runet.abonent0007.ui.theme.Border
 import svoboda.runet.abonent0007.ui.theme.Elevated
@@ -104,6 +105,7 @@ fun DpiBenchmarkDialog(onDismiss: () -> Unit) {
                     }
                     is DpiBenchmarkState.Finished -> ResultsView(
                         state = current,
+                        baseline = current.baseline,
                         onApply = { strategyId ->
                             AppGraph.appScope.launch {
                                 val ok = AppGraph.dpiBenchmark.applyStrategy(strategyId)
@@ -176,6 +178,36 @@ private fun SelectionView(
         TextButton(onClick = onClear) { Text("Снять все", fontSize = 12.sp) }
         TextButton(onClick = onReset) { Text("Сбросить", fontSize = 12.sp) }
     }
+
+    var attempts by remember { mutableStateOf(AppGraph.prefs.dpiBenchmarkAttempts) }
+    Text(
+        text = "Попыток на домен",
+        color = TextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf(3 to "3 · скрининг", 10 to "10 · валидация", 20 to "20 · финал").forEach { (n, title) ->
+            val active = attempts == n
+            TextButton(onClick = {
+                attempts = n
+                AppGraph.prefs.dpiBenchmarkAttempts = n
+            }) {
+                Text(
+                    text = title,
+                    fontSize = 12.sp,
+                    color = if (active) AccentGreen else TextSecondary,
+                )
+            }
+        }
+    }
+    Text(
+        text = "Сначала идёт скрининг всех стратегий, затем (вручную) повтор на 5 лучших с 10 попытками " +
+            "и финал на 2 лучших с 20 попытками — так отсеивается случайный выигрыш.",
+        color = TextSecondary,
+        fontSize = 10.sp,
+    )
 
     if (!dpiConnected || !methodIsDpi) {
         Text(
@@ -261,6 +293,7 @@ private fun RunView(running: DpiBenchmarkState.Running) {
                 "TCP: ${status(attempt.tcpOk)}${attempt.tcpMs?.let { " · ${it} мс" } ?: ""}\n" +
                 "TLS: ${status(attempt.tlsOk)}${attempt.tlsMs?.let { " · ${it} мс" } ?: ""}\n" +
                 "HTTP: ${status(attempt.httpOk)}${attempt.httpStatus?.let { " · $it" } ?: ""}" +
+                (if (attempt.serverLimited()) " (сеть доступна, HTTP ограничен сервером)" else "") +
                 (attempt.httpMs?.let { " · ${it} мс" } ?: "") +
                 (attempt.errorType?.let { "\nОшибка: $it — ${attempt.errorMessage ?: ""}" } ?: ""),
             color = TextSecondary,
@@ -284,15 +317,25 @@ private fun RunView(running: DpiBenchmarkState.Running) {
 @Composable
 private fun ResultsView(
     state: DpiBenchmarkState.Finished,
+    baseline: Map<String, DpiDomainTestResult>,
     onApply: (String) -> Unit,
     onExport: () -> Unit,
 ) {
-    val ranked = DpiStrategyRanker.rank(state.results)
+    val ranked = DpiStrategyRanker.rank(state.results, baseline)
     Text(
         text = "Протестировано стратегий: ${ranked.size}   ·   сессия #${state.sessionId}",
         color = TextSecondary,
         fontSize = 11.sp,
     )
+    if (baseline.isNotEmpty()) {
+        val directOk = baseline.values.count { it.networkSuccess }
+        val directFull = baseline.values.count { it.cleanSuccess }
+        Text(
+            text = "DIRECT (без обхода): сеть доступна на $directOk/${baseline.size}, полных ответов $directFull",
+            color = TextSecondary,
+            fontSize = 11.sp,
+        )
+    }
     val best = state.best
     if (best != null) {
         Surface(
@@ -311,6 +354,19 @@ private fun ResultsView(
                     color = TextSecondary,
                     fontSize = 11.sp,
                 )
+                Text(
+                    text = "Полных ответов (2xx/3xx): ${best.cleanDomains}   ·   " +
+                        "Сеть есть, HTTP ограничен сервером (401/403/429): ${best.limitedDomains}",
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                )
+                Text(
+                    text = "Обход открыл: ${DpiStrategyRanker.bypassGain(best, baseline)}   ·   " +
+                        "регрессий: ${DpiStrategyRanker.regressions(best, baseline)}   ·   " +
+                        "макро-оценка: ${(DpiStrategyRanker.macroScore(best) * 100).toInt()}%",
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                )
                 Text(text = best.strategyArgs, color = TextSecondary, fontSize = 10.sp)
                 TextButton(onClick = { onApply(best.strategyId) }) {
                     Text("ПРИМЕНИТЬ ЭТУ СТРАТЕГИЮ", color = AccentGreen)
@@ -318,6 +374,30 @@ private fun ResultsView(
                 state.appliedStrategyId?.let {
                     Text("Выбрана по результатам тестирования: $it", color = AccentGreen, fontSize = 11.sp)
                 }
+            }
+        }
+    }
+
+    val categories = DpiStrategyRanker.categories(ranked)
+    if (categories.isNotEmpty()) {
+        Text(
+            text = "ЛУЧШИЕ ПО КАТЕГОРИЯМ",
+            color = TextSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        categories.forEach { category ->
+            val categoryBest = DpiStrategyRanker.bestByCategory(ranked, baseline, category)
+            if (categoryBest != null) {
+                val inCategory = categoryBest.domains.filter { it.domain.category == category }
+                val available = inCategory.count { it.networkSuccess }
+                Text(
+                    text = "$category: ${categoryBest.strategyId} · ${categoryBest.strategyName}   —   " +
+                        "сеть $available/${inCategory.size}, полных ${inCategory.count { it.cleanSuccess }}",
+                    color = TextPrimary,
+                    fontSize = 11.sp,
+                )
             }
         }
     }
@@ -339,7 +419,11 @@ private fun ResultsView(
             Column(modifier = Modifier.weight(1f)) {
                 Text("${result.strategyId} · ${result.strategyName}", color = TextPrimary, fontSize = 12.sp)
                 Text(
-                    text = "успешно ${result.successfulDomains}/${result.domains.size}   ·   " +
+                    text = "сеть ${result.successfulDomains}/${result.domains.size}   ·   " +
+                        "полных ${result.cleanDomains}   ·   " +
+                        "ограничено ${result.limitedDomains}   ·   " +
+                        "открыл ${DpiStrategyRanker.bypassGain(result, baseline)}   ·   " +
+                        "регрессий ${DpiStrategyRanker.regressions(result, baseline)}   ·   " +
                         "${(result.successRate * 100).toInt()}%   ·   " +
                         "медиана ${result.medianHttpMs?.let { "$it мс" } ?: "—"}   ·   " +
                         "ошибок ${result.errorCount}",
