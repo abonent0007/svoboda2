@@ -1,6 +1,5 @@
 package svoboda.runet.abonent0007.ui.split
 
-import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -67,7 +66,6 @@ fun RussianDirectDialog(
     val installed = remember {
         runCatching {
             pm.getInstalledApplications(0)
-                .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
                 .associate { it.packageName to pm.getApplicationLabel(it).toString() }
         }.getOrDefault(emptyMap())
     }
@@ -84,8 +82,13 @@ fun RussianDirectDialog(
     val initial = remember(profileId) {
         AppGraph.splitManager.resolve(profileId).packageNames
     }
-    var enabled by remember {
-        mutableStateOf(initial.intersect(RussianDirectCatalog.allPackages).toSet())
+
+    // Нормализуем по установленным пакетам и привязываем состояние к профилю.
+    var enabled by remember(profileId) {
+        mutableStateOf(
+            initial.intersect(RussianDirectCatalog.allPackages)
+                .intersect(installed.keys)
+        )
     }
 
     Dialog(
@@ -147,8 +150,10 @@ fun RussianDirectDialog(
                                     fontSize = 12.sp,
                                 )
                             }
-                            NeonSwitch(allOn) { value ->
-                                enabled = if (value) enabled + apps.map { it.pkg } else enabled - apps.map { it.pkg }.toSet()
+                            if (apps.isNotEmpty()) {
+                                NeonSwitch(allOn) { value ->
+                                    enabled = if (value) enabled + apps.map { it.pkg } else enabled - apps.map { it.pkg }.toSet()
+                                }
                             }
                         }
                     }
@@ -195,9 +200,14 @@ fun RussianDirectDialog(
                     shape = RoundedCornerShape(14.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, GoodGreen),
                     onClick = {
-                        val cfg = AppGraph.splitManager.resolve(profileId).copy(
-                            mode = if (enabled.isEmpty()) SplitTunnelMode.ALL else SplitTunnelMode.ALL_EXCEPT_SELECTED,
-                            packageNames = enabled.toSet(),
+                        val current = AppGraph.splitManager.resolve(profileId)
+                        // Сохраняем пакеты, которые пользователь исключил ранее,
+                        // но которых нет в каталоге.
+                        val preserved = current.packageNames - RussianDirectCatalog.allPackages
+                        val packageNames = preserved + enabled
+                        val cfg = current.copy(
+                            mode = if (packageNames.isEmpty()) SplitTunnelMode.ALL else SplitTunnelMode.ALL_EXCEPT_SELECTED,
+                            packageNames = packageNames,
                             presetId = "russian_direct",
                         )
                         AppGraph.splitManager.update(profileId, cfg)

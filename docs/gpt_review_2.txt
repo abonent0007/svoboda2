@@ -1,0 +1,18 @@
+﻿python.exe : Traceback (most recent call last):
+C:\Users\Abonen0007\Documents\svoboda2\scripts\gpt_review_2.ps1:4 знак:1
++ & python C:\lib\chatgpt-ai.py chat --session svoboda2 --file 'C:\User ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\lib\chatgpt-ai.py", line 375, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "C:\lib\chatgpt-ai.py", line 371, in main
+    return run_query(prompt, session=args.session, reset=args.reset, timeout=args.timeout, code_only=args.code, out=arg
+s.out)
+  File "C:\lib\chatgpt-ai.py", line 264, in run_query
+    res = ask(page, prompt, timeout=timeout)
+  File "C:\lib\chatgpt-ai.py", line 203, in ask
+    raise RuntimeError("no assistant message found (login? UI changed?)")
+RuntimeError: no assistant message found (login? UI changed?)

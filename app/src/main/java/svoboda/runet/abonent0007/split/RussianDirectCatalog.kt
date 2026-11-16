@@ -56,10 +56,10 @@ object RussianDirectCatalog {
         ),
     )
 
-    /** Российские веб-ресурсы и сервисы. */
+    /** Российские сервисы и приложения (GAME: исключение целых приложений, не доменов). */
     val web = Category(
         id = "web",
-        title = "Российские веб-ресурсы",
+        title = "Российские сервисы и приложения",
         packages = setOf(
             "ru.yandex.searchplugin",
             "com.yandex.browser",
