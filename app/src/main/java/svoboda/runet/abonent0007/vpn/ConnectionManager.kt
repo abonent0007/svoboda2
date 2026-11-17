@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import svoboda.runet.abonent0007.AppGraph
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.own.OwnServer
+import svoboda.runet.abonent0007.own.PublicServerCatalog
 import svoboda.runet.abonent0007.own.OwnServerStore
 import svoboda.runet.abonent0007.warp.BundledSeed
 import svoboda.runet.abonent0007.warp.GeneratedProfile
@@ -240,6 +241,27 @@ class ConnectionManager(
         )
     }
 
+    /** Подключиться к встроенному публичному WARP-серверу; страну измеряем после подключения. */
+    suspend fun connectPublicServer(id: String): Boolean {
+        val server = PublicServerCatalog.byId(id) ?: return false
+        val config = PublicServerCatalog.config(AppGraph.appContext, id) ?: return false
+        controller.disconnect()
+        controller.currentProfileId = "public:$id"
+        applyServiceDirect(controller.currentProfileId)
+        _profileLabel.value = "${server.title} (публичный)"
+        val ok = controller.connect(config)
+        if (ok) {
+            val exit = NetProbe.fetchExit()
+            val cc = exit?.country?.uppercase().orEmpty()
+            if (cc.isNotBlank()) {
+                val map = prefs.publicServerCountries.toMutableMap()
+                map[id] = cc + "@" + System.currentTimeMillis()
+                prefs.publicServerCountries = map
+            }
+        }
+        return ok
+    }
+
     /** Подключиться к конкретному сгенерированному WARP-профилю. */
     suspend fun connectGeneratedProfile(profile: svoboda.runet.abonent0007.warp.GeneratedProfile): Boolean {
         controller.disconnect()
@@ -302,6 +324,27 @@ class ConnectionManager(
                         profiles.filter { it.observedCountry.trim().uppercase() == cc }.forEach { prof ->
                             candidates += { connectGeneratedProfile(prof) }
                         }
+                    }
+                    // Встроенные публичные NL/FI/US: приоритет — по измеренной стране
+                    // (без измерения идём в порядке метки: NL, FI, затем любые).
+                    if (prefs.autoIncludePublicServers) {
+                        val publicServers = PublicServerCatalog.servers
+                        val measured = prefs.publicServerCountries
+                        val priorityIndex: (String) -> Int = { cc ->
+                            countries.indexOf(cc.trim().uppercase()).let { index -> if (index < 0) 99 else index }
+                        }
+                        val allowed = publicServers.filter { pub ->
+                            val age = prefs.publicServerCountryAgeDays(pub.id)
+                            val cc = (measured[pub.id] ?: "").substringBefore('@').uppercase()
+                            val fresh = age in 0..7
+                            if (fresh && countries.contains(cc)) true else !strict
+                        }
+                        allowed.sortedBy { pub ->
+                            priorityIndex((measured[pub.id] ?: "").substringBefore('@').uppercase())
+                        }.forEach { pub ->
+                            candidates += { connectPublicServer(pub.id) }
+                        }
+                        if (allowed.isEmpty()) logAuto("публичные: согласия нет или страна не свежая (>7 дней)")
                     }
                     candidates += { connectWarpWithGeneration() }
                 }

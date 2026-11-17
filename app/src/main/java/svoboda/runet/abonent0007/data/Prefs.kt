@@ -105,6 +105,24 @@ class Prefs(context: Context) {
         get() = prefs.getInt("dpi_socks_port", 1080).coerceIn(1, 65535)
         set(value) = prefs.edit().putInt("dpi_socks_port", value.coerceIn(1, 65535)).apply()
 
+    /** Измеренные страны выхода публичных серверов ("id=CC"). */
+    var publicServerCountries: Map<String, String>
+        get() = (prefs.getStringSet("public_server_countries", emptySet()) ?: emptySet())
+            .mapNotNull { entry -> entry.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }
+            .toMap()
+        set(value) = prefs.edit().putStringSet("public_server_countries", value.map { "${it.key}=${it.value}" }.toSet()).apply()
+
+    /** Возраст последнего измерения страны публичного сервера в днях (-1 если нет). */
+    fun publicServerCountryAgeDays(id: String): Long {
+        val raw = prefs.getStringSet("public_server_countries", emptySet())
+            ?.firstOrNull { it.startsWith("$id=") }
+            ?.substringAfter('=', "")
+        ?: return -1
+        val parts = raw.split('@', limit = 2)
+        val ts = parts.getOrNull(1)?.toLongOrNull() ?: return Long.MAX_VALUE
+        return (System.currentTimeMillis() - ts) / (24L * 60L * 60L * 1000L)
+    }
+
     /** Предыдущая пользовательская DPI-стратегия (для отката). */
     var dpiCustomStrategyPrev: String
         get() = prefs.getString("dpi_custom_strategy_prev", "") ?: ""
@@ -145,6 +163,11 @@ class Prefs(context: Context) {
     var autoCountryStrict: Boolean
         get() = prefs.getBoolean("auto_country_strict", false)
         set(value) = prefs.edit().putBoolean("auto_country_strict", value).apply()
+
+    /** AUTO: использовать встроенные публичные серверы (чужие операторы). По умолчанию выключено. */
+    var autoIncludePublicServers: Boolean
+        get() = prefs.getBoolean("auto_include_public_servers", false)
+        set(value) = prefs.edit().putBoolean("auto_include_public_servers", value).apply()
 
     /** AUTO: если DC Telegram недоступны через DPI — выбирать AWG/WARP. */
     var autoTelegramViaVpn: Boolean

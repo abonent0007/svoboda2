@@ -77,6 +77,8 @@ fun MethodSettingsDialog(
     onDismiss: () -> Unit,
 ) {
     var showBenchmark by remember { mutableStateOf(false) }
+    val publicServers = svoboda.runet.abonent0007.own.PublicServerCatalog.servers
+    val publicCountries = remember { AppGraph.prefs.publicServerCountries }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -304,6 +306,8 @@ private fun AwgGeneratorDialog(onDismiss: () -> Unit) {
 @Composable
 private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
     val scope = rememberCoroutineScope()
+    val publicServers = svoboda.runet.abonent0007.own.PublicServerCatalog.servers
+    val publicCountries = remember { AppGraph.prefs.publicServerCountries }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -334,6 +338,44 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
     MtuRow(mtu = mtu, onMtu = onMtu)
 
     ServiceScopePicker(title = "СЕРВИСЫ В ТУННЕЛЬ (WARP)")
+
+    SectionTitle("ПУБЛИЧНЫЕ СЕРВЕРЫ · NL/FI/США")
+    Text(
+        text = "ВНИМАНИЕ: чужие операторы (коллективные identity), метаданные соединений им видны. " +
+            "Строго NL/FI/US без своего сервера не гарантируются. Рекомендуется свой VPS. " +
+            "Публично опубликованные WARP-конфиги (Delta-Kronecker/Cloudflare-Warp), " +
+            "страна в имени хоста. Страна выхода измеряется после подключения и отображается рядом. " +
+            "Доступность не гарантирована — это публичные коллективные identity.",
+        color = TextSecondary,
+        fontSize = 11.sp,
+    )
+    publicServers.chunked(3).forEach { rowServers ->
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            rowServers.forEach { server ->
+                val country = publicCountries[server.id]
+                TextButton(onClick = {
+                    scope.launch {
+                        status = "Подключение ${server.host}:${server.port} …"
+                        val ok = AppGraph.manager.connectPublicServer(server.id)
+                        status = if (ok) {
+                            "Подключено: ${server.title}"
+                        } else {
+                            "Не удалось подключить ${server.host}"
+                        }
+                    }
+                }) {
+                    Text(
+                        text = server.title + (country?.let { " · $it" } ?: ""),
+                        fontSize = 11.sp,
+                        color = AccentGreen,
+                    )
+                }
+            }
+        }
+    }
+    status?.let {
+        TileRow(title = "Статус", value = it, opaque = true)
+    }
 
     SectionTitle("DNS В КОНФИГЕ")
     var dnsValue by remember { mutableStateOf(WarpGenerator.resolveDns("cloudflare")) }
@@ -450,7 +492,7 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
                     scope.launch {
                         profileStatus = "Подключение ${profile.host}:${profile.port} …"
                         val ok = AppGraph.manager.connectGeneratedProfile(profile)
-                        profileStatus = if (ok) {
+                        status = if (ok) {
                             "Подключено: ${profile.host}:${profile.port}"
                         } else {
                             "Не удалось подключить ${profile.host}:${profile.port}"
@@ -731,6 +773,7 @@ private fun AutoSettings() {
     var transportOrder by remember { mutableStateOf(prefs.autoTransportOrder) }
     var countryPriority by remember { mutableStateOf(prefs.autoCountryPriority) }
     var strict by remember { mutableStateOf(prefs.autoCountryStrict) }
+    var usePublic by remember { mutableStateOf(prefs.autoIncludePublicServers) }
     var holdMinutes by remember { mutableStateOf(prefs.autoHoldMinutes.toString()) }
 
     SectionTitle("AUTO · АВТОМАТИЧЕСКИЙ ПОДБОР")
@@ -802,6 +845,24 @@ private fun AutoSettings() {
                 prefs.autoCountryStrict = it
             }
         },
+    )
+    TileRow(
+        title = "Публичные серверы в AUTO",
+        value = if (usePublic) "учтены (неизвестные операторы)" else "не учитывать",
+        opaque = true,
+        control = {
+            NeonSwitch(usePublic) {
+                usePublic = it
+                prefs.autoIncludePublicServers = it
+            }
+        },
+    )
+    Text(
+        text = "ВНИМАНИЕ: публичные серверы — коллективные identity чужих операторов: оно видит " +
+            "метаданные ваших соединений (объём/время/IP назначений). Без строгой необходимости " +
+            "лучше свой AWG-сервер в NL/FI/US.",
+        color = TextSecondary,
+        fontSize = 10.sp,
     )
     OutlinedTextField(
         value = holdMinutes,
