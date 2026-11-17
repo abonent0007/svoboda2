@@ -288,10 +288,10 @@ class ConnectionManager(
         if (prefs.autoHoldMinutes > 0 && controller.isConnected &&
             now - lastAutoSwitchAt < prefs.autoHoldMinutes * 60_000L
         ) {
-            logAuto("anti-bounce: hold ${'$'}{prefs.autoHoldMinutes}m")
+            logAuto("anti-bounce: hold ${prefs.autoHoldMinutes}m")
             return true
         }
-        logAuto("AUTO start; order=${'$'}{prefs.autoTransportOrder}; countries=${'$'}{prefs.autoCountryPriority}")
+        logAuto("AUTO start; order=${prefs.autoTransportOrder}; countries=${prefs.autoCountryPriority}")
 
         val transports = prefs.autoTransportOrder.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
         val countries = prefs.autoCountryPriority.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
@@ -370,9 +370,9 @@ class ConnectionManager(
 
         var dpiFallback = false
         for ((i, candidate) in candidates.withIndex()) {
-            logAuto("try candidate #${'$'}{i + 1}")
+            logAuto("try candidate #${i + 1}")
             if (!candidate()) continue
-            logAuto("candidate #${'$'}{i + 1} selected: ${'$'}{controller.currentProfileId}")
+            logAuto("candidate #${i + 1} selected: ${controller.currentProfileId}")
             val isDpi = controller.currentProfileId == "dpi"
             if (isDpi && prefs.autoTelegramViaVpn) {
                 // Telegram-приложение ходит к IP-адресам DC: DPI-стратегии их не открывают.
