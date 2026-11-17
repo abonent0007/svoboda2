@@ -40,6 +40,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
@@ -135,6 +136,12 @@ fun HomeScreen(
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+
+    // BACK/навигация-назад в режиме меню: закрыть drawer (не выходить из приложения).
+    // Выход — только с главной страницы (стандартное поведение Activity).
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
 
     // Локальные зеркала настроек (пишутся в Prefs).
     var graphEnabled by remember { mutableStateOf(prefs.pingGraphEnabled) }
