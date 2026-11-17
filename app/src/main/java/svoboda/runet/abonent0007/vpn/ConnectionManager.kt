@@ -288,8 +288,10 @@ class ConnectionManager(
         if (prefs.autoHoldMinutes > 0 && controller.isConnected &&
             now - lastAutoSwitchAt < prefs.autoHoldMinutes * 60_000L
         ) {
+            logAuto("anti-bounce: hold ${'$'}{prefs.autoHoldMinutes}m")
             return true
         }
+        logAuto("AUTO start; order=${'$'}{prefs.autoTransportOrder}; countries=${'$'}{prefs.autoCountryPriority}")
 
         val transports = prefs.autoTransportOrder.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
         val countries = prefs.autoCountryPriority.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
@@ -301,6 +303,7 @@ class ConnectionManager(
             when (transport) {
                 "AWG" -> {
                     val servers = serverStore.list()
+                    logAuto("AWG: own servers=${servers.size}")
                     countries.forEach { cc ->
                         servers.filter { it.countryCode.trim().uppercase() == cc }.forEach { srv ->
                             candidates += {
@@ -350,6 +353,7 @@ class ConnectionManager(
                 }
                 "DPI" -> {
                     candidates += {
+                        logAuto("DPI candidate")
                         controller.currentProfileId = "dpi"
                         _profileLabel.value = "AUTO · DPI"
                         AppGraph.dpi.start()
@@ -359,29 +363,35 @@ class ConnectionManager(
         }
 
         if (strict && candidates.isEmpty()) {
+            logAuto("strict: no candidates — abort")
             _profileLabel.value = "AUTO · нет профиля нужной страны"
             return false
         }
 
         var dpiFallback = false
-        for (candidate in candidates) {
+        for ((i, candidate) in candidates.withIndex()) {
+            logAuto("try candidate #${'$'}{i + 1}")
             if (!candidate()) continue
+            logAuto("candidate #${'$'}{i + 1} selected: ${'$'}{controller.currentProfileId}")
             val isDpi = controller.currentProfileId == "dpi"
             if (isDpi && prefs.autoTelegramViaVpn) {
                 // Telegram-приложение ходит к IP-адресам DC: DPI-стратегии их не открывают.
                 // Если DC недоступны — ищем транспорт AWG/WARP, и только потом откатываемся на DPI.
                 val dc = TelegramDc.check(viaSocks = true, socksPort = prefs.dpiSocksPort)
                 if (!dc.reachable) {
+                    logAuto("Telegram DC over DPI down (${dc.error ?: "no answer"}) -> AWG/WARP")
                     autoStatus = "Telegram DC недоступны через DPI (${dc.error ?: "нет ответа"}) — ищем AWG/WARP"
                     if (!dpiFallback) {
                         dpiFallback = true
                         continue
                     }
                 } else {
+                    logAuto("Telegram DC reachable")
                     autoStatus = "Telegram DC доступны"
                 }
             }
             lastAutoSwitchAt = System.currentTimeMillis()
+            logAuto("done: profile=${controller.currentProfileId}")
             return true
         }
         if (dpiFallback) {
@@ -396,6 +406,24 @@ class ConnectionManager(
 
     /** Время последнего автоматического переключения (антидребезг). */
     private var lastAutoSwitchAt: Long = 0L
+    /** Журнал решений AUTO (одной строкой на событие), хранится локально. */
+    @Volatile
+    var autoLog: List<String> = loadAutoLog()
+        private set
+
+    private fun logAuto(event: String) {
+        val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+        val line = "$stamp $event"
+        autoLog = (autoLog + line).takeLast(150)
+        runCatching {
+            java.io.File(AppGraph.appContext.filesDir, "auto_log.txt").appendText(line + "\n", Charsets.UTF_8)
+        }
+    }
+
+    private fun loadAutoLog(): List<String> = runCatching {
+        val file = java.io.File(AppGraph.appContext.filesDir, "auto_log.txt")
+        if (file.exists()) file.readLines(Charsets.UTF_8).takeLast(150) else emptyList()
+    }.getOrDefault(emptyList())
 
     /** Сохранённые сгенерированные WARP-профили (новые сверху). */
     fun generatedProfiles(): List<svoboda.runet.abonent0007.warp.GeneratedProfile> =
