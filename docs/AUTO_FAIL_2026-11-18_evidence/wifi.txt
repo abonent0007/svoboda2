@@ -1,0 +1,14 @@
+WifiState 0
+Current wifi mode: DisabledState
+ rec[0]: time=11-18 19:10:27.511 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+ rec[1]: time=11-18 19:10:27.560 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+ rec[2]: time=11-18 19:10:28.220 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+ rec[3]: time=11-18 19:10:28.544 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+ rec[4]: time=11-18 19:10:26.098 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+ rec[5]: time=11-18 19:10:26.469 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+ rec[6]: time=11-18 19:12:38.087 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CONFIG
+ rec[7]: time=11-18 19:12:38.771 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+ rec[8]: time=11-18 19:12:39.566 processed=DefaultState org=DisabledState dest=<null> what=CMD_UPDATE_AP_CAPABILITY
+curState=DisabledState
+11-18 20:32:04.349 15218 15218 I adbd    : adbd service requested 'shell,v2,TERM=xterm-256color,raw:dumpsys wifi | grep -m1 -E 'DisabledState|WifiState''
+11-18 21:02:09.735 15218 15218 I adbd    : adbd service requested 'shell,v2,TERM=xterm-256color,raw:dumpsys wifi | grep -m1 'DisabledState''

@@ -1,0 +1,240 @@
+16:03:12 AUTO start; order=${prefs.autoTransportOrder}; countries=${prefs.autoCountryPriority}
+16:03:12 AWG: own servers=0
+16:03:12 try candidate #${i + 1}
+16:03:17 candidate #${i + 1} selected: ${controller.currentProfileId}
+16:03:17 done: profile=warp
+18:03:21 AUTO start; order=${prefs.autoTransportOrder}; countries=${prefs.autoCountryPriority}
+18:03:21 AWG: own servers=0
+18:03:21 try candidate #${i + 1}
+18:03:37 try candidate #${i + 1}
+18:03:52 try candidate #${i + 1}
+18:04:07 try candidate #${i + 1}
+18:04:23 try candidate #${i + 1}
+18:04:38 try candidate #${i + 1}
+18:04:53 try candidate #${i + 1}
+18:04:55 candidate #${i + 1} selected: ${controller.currentProfileId}
+18:04:55 done: profile=public:any_1
+18:07:27 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+18:07:27 AWG: own servers=0
+18:07:27 try candidate #1
+18:07:42 try candidate #2
+18:07:58 try candidate #3
+18:08:13 try candidate #4
+18:08:28 try candidate #5
+18:08:43 try candidate #6
+18:08:58 try candidate #7
+18:09:01 candidate #7 selected: public:any_1
+18:09:01 done: profile=public:any_1
+18:36:38 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+18:36:38 AWG: own servers=0
+18:36:38 try candidate #1
+18:36:54 try candidate #2
+18:37:09 try candidate #3
+18:37:24 try candidate #4
+18:37:30 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+18:37:30 AWG: own servers=0
+18:37:30 try candidate #1
+18:37:46 try candidate #2
+18:38:01 try candidate #3
+18:38:16 try candidate #4
+18:38:31 try candidate #5
+18:38:47 try candidate #6
+18:39:02 try candidate #7
+18:39:17 try candidate #8
+18:39:32 try candidate #9
+18:41:02 candidate #9 selected: public:any_3
+18:41:02 done: profile=public:any_3
+18:43:28 anti-bounce: hold 5m
+18:43:59 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+18:43:59 AWG: own servers=0
+18:43:59 try candidate #1
+18:44:14 try candidate #2
+18:44:30 try candidate #3
+18:44:45 try candidate #4
+18:45:00 try candidate #5
+18:45:13 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+18:45:13 AWG: own servers=0
+18:45:13 try candidate #1
+18:45:28 try candidate #2
+18:45:43 try candidate #3
+18:45:58 try candidate #4
+18:46:14 try candidate #5
+18:46:29 try candidate #6
+18:46:44 try candidate #7
+18:46:59 try candidate #8
+18:47:15 try candidate #9
+18:47:30 try candidate #10
+18:47:35 candidate #10 selected: warp
+18:47:35 done: profile=warp
+19:22:05 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:22:05 AWG: own servers=0
+19:22:05 try candidate #1
+19:22:20 try candidate #2
+19:22:35 try candidate #3
+19:22:51 try candidate #4
+19:23:06 try candidate #5
+19:23:25 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:23:25 AWG: own servers=0
+19:23:26 try candidate #1
+19:23:41 try candidate #2
+19:23:56 try candidate #3
+19:24:11 try candidate #4
+19:24:26 try candidate #5
+19:24:42 try candidate #6
+19:24:57 try candidate #7
+19:25:12 try candidate #8
+19:25:14 candidate #8 selected: public:any_2
+19:25:14 done: profile=public:any_2
+19:43:49 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:43:49 AWG: own servers=0
+19:43:49 try candidate #1
+19:44:05 try candidate #2
+19:44:21 try candidate #3
+19:44:36 try candidate #4
+19:46:56 try candidate #5
+19:47:11 try candidate #6
+19:47:43 try candidate #7
+19:47:45 candidate #7 selected: public:any_1
+19:47:45 done: profile=public:any_1
+19:55:54 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:55:54 AWG: own servers=0
+19:55:54 try candidate #1
+19:56:10 try candidate #2
+19:56:26 try candidate #3
+19:56:41 try candidate #4
+19:56:57 try candidate #5
+19:57:14 try candidate #6
+19:57:37 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:57:37 AWG: own servers=0
+19:57:37 try candidate #1
+19:57:59 try candidate #2
+19:58:18 try candidate #3
+19:58:34 try candidate #4
+19:58:49 try candidate #5
+19:59:08 try candidate #6
+19:59:23 try candidate #7
+20:00:15 candidate #7 selected: public:any_1
+20:00:15 done: profile=public:any_1
+13:36:02 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+13:36:02 AWG: own servers=0
+13:36:03 try candidate #1
+13:36:18 try candidate #2
+13:36:33 try candidate #3
+13:36:49 try candidate #4
+13:37:04 try candidate #5
+13:37:19 try candidate #6
+13:37:34 try candidate #7
+13:37:36 candidate #7 selected: public:any_1
+13:37:36 done: profile=public:any_1
+13:37:38 anti-bounce: hold 5m
+14:16:04 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+14:16:04 AWG: own servers=0
+14:16:04 try candidate #1
+14:16:20 try candidate #2
+14:16:35 try candidate #3
+14:16:50 try candidate #4
+14:17:05 try candidate #5
+14:17:21 try candidate #6
+14:17:36 try candidate #7
+14:17:51 try candidate #8
+14:17:53 candidate #8 selected: public:any_2
+14:17:53 done: profile=public:any_2
+14:17:53 anti-bounce: hold 5m
+14:19:57 anti-bounce: hold 5m
+19:18:02 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:18:02 AWG: own servers=0
+19:18:02 try candidate #1
+19:18:17 try candidate #2
+19:18:33 try candidate #3
+19:18:48 try candidate #4
+19:19:03 try candidate #5
+19:19:18 try candidate #6
+19:19:34 try candidate #7
+19:20:18 candidate #7 selected: public:any_1
+19:20:18 done: profile=public:any_1
+19:20:39 anti-bounce: hold 5m
+19:22:20 anti-bounce: hold 5m
+19:24:28 anti-bounce: hold 5m
+19:26:36 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:26:36 AWG: own servers=0
+19:26:36 try candidate #1
+19:26:52 try candidate #2
+19:27:07 try candidate #3
+19:27:22 try candidate #4
+19:27:37 try candidate #5
+19:27:53 try candidate #6
+19:28:08 try candidate #7
+19:28:52 candidate #7 selected: public:any_1
+19:28:52 done: profile=public:any_1
+19:31:00 anti-bounce: hold 5m
+19:33:08 anti-bounce: hold 5m
+19:34:33 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:34:33 AWG: own servers=0
+19:34:33 try candidate #1
+19:34:48 try candidate #2
+19:35:03 try candidate #3
+19:36:00 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:36:00 AWG: own servers=0
+19:36:00 try candidate #1
+19:36:15 try candidate #2
+19:36:30 try candidate #3
+19:36:46 try candidate #4
+19:37:01 try candidate #5
+19:37:16 try candidate #6
+19:37:31 try candidate #7
+19:38:16 candidate #7 selected: public:any_1
+19:38:16 done: profile=public:any_1
+19:39:09 anti-bounce: hold 5m
+19:41:17 anti-bounce: hold 5m
+19:42:19 anti-bounce: hold 5m
+19:42:53 anti-bounce: hold 5m
+19:43:29 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:43:29 AWG: own servers=0
+19:43:29 try candidate #1
+19:43:44 try candidate #2
+19:44:00 try candidate #3
+19:44:15 try candidate #4
+19:44:35 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+19:44:35 AWG: own servers=0
+19:44:35 try candidate #1
+19:44:50 try candidate #2
+19:45:05 try candidate #3
+19:45:21 try candidate #4
+19:45:36 try candidate #5
+19:45:51 try candidate #6
+19:46:06 try candidate #7
+19:46:22 try candidate #8
+19:46:24 candidate #8 selected: public:any_2
+19:46:24 done: profile=public:any_2
+21:02:54 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+21:02:54 AWG: own servers=0
+21:02:54 try candidate #1
+21:03:09 try candidate #2
+21:03:24 try candidate #3
+21:03:39 try candidate #4
+21:03:55 try candidate #5
+21:04:10 try candidate #6
+21:04:25 try candidate #7
+21:05:10 candidate #7 selected: public:any_1
+21:05:10 done: profile=public:any_1
+21:07:18 anti-bounce: hold 5m
+21:09:26 anti-bounce: hold 5m
+21:11:34 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+21:11:34 AWG: own servers=0
+21:11:34 try candidate #1
+21:11:50 try candidate #2
+21:12:05 try candidate #3
+21:12:20 try candidate #4
+21:12:36 try candidate #5
+21:12:51 try candidate #6
+21:13:06 try candidate #7
+21:13:51 candidate #7 selected: public:any_1
+21:13:51 done: profile=public:any_1
+21:15:59 anti-bounce: hold 5m
+21:18:07 anti-bounce: hold 5m
+21:18:51 AUTO start; order=AWG,WARP,DPI; countries=NL,FI,US
+21:18:51 AWG: own servers=0
+21:18:52 try candidate #1
+21:19:07 try candidate #2
+21:19:22 try candidate #3
+21:19:37 try candidate #4
