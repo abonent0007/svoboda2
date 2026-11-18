@@ -400,35 +400,71 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Button(
-                        onClick = { if (connected) onDisconnect() else onConnect() },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = when {
-                                busy -> Elevated
-                                connected -> AccentGreen
-                                else -> AccentGreen
-                            },
-                            contentColor = when {
-                                busy -> AccentBlue
-                                connected -> Color(0xFF062018)
-                                else -> Color(0xFF062018)
-                            },
-                        ),
-                    ) {
-                        Text(
-                            text = when {
-                                busy -> "ПОДКЛЮЧЕНИЕ…"
-                                connected -> "ОТКЛЮЧИТЬ"
-                                else -> "ПОДКЛЮЧИТЬ"
-                            },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                        )
+                    if (phase == VpnPhase.DEGRADED) {
+                        // DEGRADED: туннель есть, данных нет — явный выход и явный повтор.
+                        Button(
+                            onClick = onConnect,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentGreen,
+                                contentColor = Color(0xFF062018),
+                            ),
+                        ) {
+                            Text(
+                                text = "ПОВТОРИТЬ",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onDisconnect,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, Color(0xFF3A4B5C)),
+                        ) {
+                            Text(
+                                text = "ОТКЛЮЧИТЬ",
+                                color = Color(0xFFA9B7C6),
+                                maxLines = 1,
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = { if (connected) onDisconnect() else onConnect() },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = when {
+                                    busy -> Elevated
+                                    connected -> AccentGreen
+                                    else -> AccentGreen
+                                },
+                                contentColor = when {
+                                    busy -> AccentBlue
+                                    connected -> Color(0xFF062018)
+                                    else -> Color(0xFF062018)
+                                },
+                            ),
+                        ) {
+                            Text(
+                                text = when {
+                                    busy -> "ПОДКЛЮЧЕНИЕ…"
+                                    connected -> "ОТКЛЮЧИТЬ"
+                                    else -> "ПОДКЛЮЧИТЬ"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                            )
+                        }
                     }
 
                     OutlinedButton(

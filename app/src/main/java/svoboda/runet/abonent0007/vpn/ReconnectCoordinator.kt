@@ -36,8 +36,8 @@ class ReconnectCoordinator(
     private val controller: VpnController,
     private val prefs: Prefs,
     private val scope: CoroutineScope,
-    private val manualConnect: suspend () -> Boolean,
-    private val autoConnect: suspend () -> Boolean,
+    private val manualConnect: suspend () -> ConnectionResult,
+    private val autoConnect: suspend (Boolean) -> ConnectionResult,
     private val disconnectAction: () -> Unit,
 ) {
     private val mutex = Mutex()
@@ -147,17 +147,45 @@ class ReconnectCoordinator(
         _state.value = ReconnectState.CONNECTING
         // Новая попытка — убираем устаревший обратный отсчёт прошлой ошибки.
         controller.setStatus(null)
-        val ok = if (manual) manualConnect() else autoConnect()
+        val result = try {
+            if (manual) manualConnect() else autoConnect(false)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            // Управляющее событие: отмена — не сетевая ошибка и не повод перетирать статус.
+            throw ce
+        } catch (t: Throwable) {
+            // Никаких exception.toString() в пользовательском статусе.
+            ConnectionResult.NoWorkingRoute(listOf("internal: ${t::class.java.simpleName}"))
+        }
         if (intent.sessionId != currentSession) return@withLock
-        if (ok) {
-            _state.value = ReconnectState.CONNECTED
-            failureCount = 0
-            // Успешное подключение — сбрасываем статус реконнекта, чтобы он не «прилипал» в UI.
-            controller.setStatus(null)
-            startHealth(currentSession)
-        } else {
-            _state.value = ReconnectState.FAILED
-            scheduleReconnect(currentSession)
+        when (result) {
+            is ConnectionResult.ConnectedHealthy -> {
+                _state.value = ReconnectState.CONNECTED
+                failureCount = 0
+                controller.setStatus(null)
+                startHealth(currentSession)
+            }
+            is ConnectionResult.ReconnectDeferred -> {
+                // Отложенная попытка — НЕ показатель подключения: ничего не меняем.
+                return@withLock
+            }
+            is ConnectionResult.TransportUpValidating -> {
+                _state.value = ReconnectState.CONNECTING
+                controller.setStatus("Проверяю данные…")
+            }
+            is ConnectionResult.NoWorkingRoute,
+            is ConnectionResult.CandidateDegraded,
+            is ConnectionResult.FailoverInProgress -> {
+                _state.value = ReconnectState.FAILED
+                controller.setStatus("Нет рабочего маршрута")
+                if (!manual) {
+                    // Авто-подключение (не пользовательская кнопка): честный backoff.
+                    scheduleReconnect(currentSession)
+                }
+            }
+            is ConnectionResult.UserDisconnected -> {
+                _state.value = ReconnectState.IDLE
+                controller.setStatus(null)
+            }
         }
     }
 
@@ -185,17 +213,46 @@ class ReconnectCoordinator(
             delay(delaySec * 1000L)
             if (!intent.shouldBeConnected || intent.sessionId != currentSession) return@launch
             _state.value = ReconnectState.RECONNECTING
-            mutex.withLock {
-                if (intent.sessionId != currentSession) return@withLock
-                val ok = autoConnect()
-                if (intent.sessionId != currentSession) return@withLock
-                if (ok) {
-                    _state.value = ReconnectState.CONNECTED
-                    failureCount = 0
-                    startHealth(currentSession)
-                } else {
-                    scheduleReconnect(currentSession)
+            try {
+                mutex.withLock {
+                    if (intent.sessionId != currentSession) return@withLock
+                    val result = try {
+                        // Failover от доказанно нерабочего маршрута: антидребезг не применяется.
+                        autoConnect(true)
+                    } catch (ce: kotlinx.coroutines.CancellationException) {
+                        throw ce
+                    } catch (t: Throwable) {
+                        ConnectionResult.NoWorkingRoute(listOf("internal: ${t::class.java.simpleName}"))
+                    }
+                    if (intent.sessionId != currentSession) return@withLock
+                    when (result) {
+                        is ConnectionResult.ConnectedHealthy -> {
+                            _state.value = ReconnectState.CONNECTED
+                            failureCount = 0
+                            controller.setStatus(null)
+                            startHealth(currentSession)
+                        }
+                        is ConnectionResult.NoWorkingRoute,
+                        is ConnectionResult.CandidateDegraded,
+                        is ConnectionResult.FailoverInProgress -> {
+                            _state.value = ReconnectState.FAILED
+                            // Честный терминал: дальнейших попыток не планируем.
+                            controller.setStatus("Нет рабочего маршрута")
+                        }
+                        is ConnectionResult.ReconnectDeferred -> {
+                            // Отложенная попытка — остаёмся в DEGRADED, планируем следующую попытку.
+                            scheduleReconnect(currentSession)
+                        }
+                        is ConnectionResult.TransportUpValidating,
+                        is ConnectionResult.UserDisconnected -> {
+                            // Unknown here: продолжаем backoff.
+                            scheduleReconnect(currentSession)
+                        }
+                    }
                 }
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                // Отмена — управляющее событие: никаких «ошибок» в статусе.
+                return@launch
             }
         }
     }

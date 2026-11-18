@@ -14,6 +14,7 @@ import svoboda.runet.abonent0007.warp.GeneratedProfileStore
 import svoboda.runet.abonent0007.warp.SeedCatalog
 import svoboda.runet.abonent0007.net.NetProbe
 import svoboda.runet.abonent0007.net.TelegramDc
+import svoboda.runet.abonent0007.net.DataPlane
 import svoboda.runet.abonent0007.split.ServiceCatalog
 import svoboda.runet.abonent0007.split.SplitTunnelConfig
 import svoboda.runet.abonent0007.split.SplitTunnelMode
@@ -73,6 +74,56 @@ class ConnectionManager(
         return if (head.isBlank()) "Свой сервер · AWG" else "$head · AWG"
     }
 
+    /**
+     * Валидация data-plane для любого выбранного транспорта.
+     * AWG/WARP/публичные — через собственный пакет (идёт через tun0),
+     * DPI — через локальный SOCKS5 (ciadpi). Одна контрольная попытка при двойном провале.
+     */
+    private suspend fun validateDataPlane(candidateId: String): ConnectionResult {
+        // Для DPI единственный честный data-plane — SOCKS5 (ciadpi). Если порт ещё не
+        // выставлен движком, берём сконфигурированный.
+        val socksPort = controller.dpiProbePort
+            ?: prefs.dpiSocksPort.takeIf { candidateId == "dpi" || controller.currentProfileId == "dpi" }
+        if (socksPort != null) {
+            return socksDataPlaneResult(candidateId, socksPort)
+        }
+        var outcome = DataPlane.validate()
+        if (!DataPlane.isUsable(outcome)) {
+            logAuto("candidate $candidateId: data-plane first probe failed, control retry")
+            kotlinx.coroutines.delay(2500)
+            outcome = DataPlane.validate()
+        }
+        return when {
+            DataPlane.isUsable(outcome) -> {
+                val partial = !(outcome.cf.ok && outcome.g.ok)
+                if (partial) {
+                    logAuto("candidate $candidateId: data-plane ok (partial: ${if (outcome.cf.ok) "cloudflare" else "gstatic"})")
+                } else {
+                    logAuto("candidate $candidateId: data-plane ok")
+                }
+                ConnectionResult.ConnectedHealthy
+            }
+            else -> {
+                val kind = DataPlane.classify(outcome)
+                val detail = classifyFailure(kind, outcome.cf.httpCode ?: outcome.g.httpCode, outcome.cf.detail + " | " + outcome.g.detail)
+                logAuto("candidate $candidateId: CANDIDATE_DEGRADED ($detail)")
+                runCatching { controller.disconnect() }
+                ConnectionResult.CandidateDegraded(candidateId, kind, detail)
+            }
+        }
+    }
+
+    private suspend fun socksDataPlaneResult(candidateId: String, port: Int): ConnectionResult {
+        val exit = NetProbe.fetchExitViaSocks(port)
+        return if (exit != null) {
+            logAuto("candidate $candidateId: data-plane ok (socks)")
+            ConnectionResult.ConnectedHealthy
+        } else {
+            logAuto("candidate $candidateId: CANDIDATE_DEGRADED (stage=socks)")
+            ConnectionResult.CandidateDegraded(candidateId, FailureKind.UNKNOWN, "socks probe failed on 127.0.0.1:$port")
+        }
+    }
+
     private fun markServerStatus(server: OwnServer, ok: Boolean) {
         serverStore.update(
             server.copy(
@@ -83,26 +134,34 @@ class ConnectionManager(
     }
 
     /** Ручное подключение: свой сервер, иначе новый WARP-профиль. */
-    suspend fun connectManual(): Boolean {
+    suspend fun connectManual(): ConnectionResult {
         if (prefs.connectionMethod == "AUTO") {
-            return autoConnect()
+            return autoConnect(force = true)
         }
         if (prefs.connectionMethod == "DPI_DIRECT") {
             controller.currentProfileId = "dpi"
             _profileLabel.value = if (prefs.dpiCustomStrategy.isNotBlank()) "DPI · пользовательская" else "DPI · ${prefs.dpiStrategyId}"
-            return AppGraph.dpi.start()
+            if (!AppGraph.dpi.start()) {
+                logAuto("candidate dpi: TRANSPORT_FAIL(stage=dpi-start)")
+                return ConnectionResult.CandidateDegraded("dpi", FailureKind.UNKNOWN, "dpi engine start failed")
+            }
+            return validateDataPlane("dpi")
         }
         activeServer()?.let { server ->
             controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)
             val ok = controller.connect(server.resolvedConfig)
             markServerStatus(server, ok)
-            return ok
+            if (!ok) {
+                logAuto("candidate ${server.id}: TRANSPORT_FAIL(stage=handshake, awg connect failed)")
+                return ConnectionResult.CandidateDegraded(server.id, FailureKind.HANDSHAKE, "awg connect failed")
+            }
+            return validateDataPlane(server.id)
         }
         return connectWarpWithGeneration()
     }
 
-    private suspend fun connectWarpWithGeneration(): Boolean {
+    private suspend fun connectWarpWithGeneration(): ConnectionResult {
         controller.currentProfileId = "warp"
         applyServiceDirect("warp")
         // Jc/Jmin/Jmax и I1 берём из проверенного профиля №11: та же
@@ -136,7 +195,7 @@ class ConnectionManager(
                 store.add(GeneratedProfile(System.currentTimeMillis(), host, port, config))
                 if (controller.connect(config)) {
                     rememberGood(config)
-                    return true
+                    return validateDataPlane("warp:generated")
                 }
             }
         }
@@ -146,48 +205,63 @@ class ConnectionManager(
             _profileLabel.value = "Профиль WARP · №${index + 1}"
             if (controller.connect(profile.config)) {
                 rememberGood(profile.config)
-                return true
+                return validateDataPlane("warp:fallback-${index + 1}")
             }
         }
 
         // Шаг 4. Последний рубеж — профиль №11 из assets.
-        val seed = seedForParams ?: return false
+        val seed = seedForParams ?: return ConnectionResult.CandidateDegraded("warp", FailureKind.UNKNOWN, "no seeds bundled")
         _profileLabel.value = "Профиль №${seed.number} · WARP"
         val ok = controller.connect(seed.raw_config)
-        if (ok) rememberGood(seed.raw_config)
-        return ok
+        if (!ok) {
+            logAuto("candidate warp:seed${seed.number}: TRANSPORT_FAIL(stage=handshake)")
+            return ConnectionResult.CandidateDegraded("warp:seed", FailureKind.HANDSHAKE, "bootstrap seed connect failed")
+        }
+        rememberGood(seed.raw_config)
+        return validateDataPlane("warp:seed${seed.number}")
     }
 
-    /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг. */
-    suspend fun connectLastKnown(): Boolean {
+    /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг.
+     *  @param force true — пропустить антидребезг (ручное ПОДКЛЮЧИТЬ/failover с деградированного маршрута). */
+    suspend fun connectLastKnown(force: Boolean = false): ConnectionResult {
         if (prefs.connectionMethod == "AUTO") {
-            return autoConnect()
+            return autoConnect(force = force)
         }
         if (prefs.connectionMethod == "DPI_DIRECT") {
             controller.currentProfileId = "dpi"
             _profileLabel.value = if (prefs.dpiCustomStrategy.isNotBlank()) "DPI · пользовательская" else "DPI · " + prefs.dpiStrategyId
-            return AppGraph.dpi.start()
+            if (!AppGraph.dpi.start()) {
+                logAuto("candidate dpi: TRANSPORT_FAIL(stage=dpi-start)")
+                return ConnectionResult.CandidateDegraded("dpi", FailureKind.UNKNOWN, "dpi engine start failed")
+            }
+            return validateDataPlane("dpi")
         }
         activeServer()?.let { server ->
             controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)
             val ok = controller.connect(server.resolvedConfig)
             markServerStatus(server, ok)
-            return ok
+            if (!ok) {
+                logAuto("candidate ${server.id}: TRANSPORT_FAIL(stage=handshake, awg connect failed)")
+                return ConnectionResult.CandidateDegraded(server.id, FailureKind.HANDSHAKE, "awg connect failed")
+            }
+            return validateDataPlane(server.id)
         }
         val config = lastGoodConfig ?: store.list().lastOrNull()?.config
             ?: SeedCatalog.defaultSeed(seeds)?.raw_config
         controller.currentProfileId = "warp"
-        if (config != null && controller.connect(config)) return true
+        if (config != null && controller.connect(config)) {
+            return validateDataPlane("warp:lastgood")
+        }
         // Сохранённый конфиг не прошёл (устаревшая WARP-регистрация/смена сети):
         // перерегистрируемся через Cloudflare, а не зацикливаемся на мёртвом конфиге.
         return connectWarpWithGeneration()
     }
 
     /** Переподключение с текущим конфигом (для применения настроек). */
-    suspend fun reconnectLastKnown(): Boolean {
+    suspend fun reconnectLastKnown(): ConnectionResult {
         controller.disconnect()
-        return connectLastKnown()
+        return connectLastKnown(force = true)
     }
 
     /** Однократное автоподключение при старте приложения (если включено). */
@@ -198,8 +272,11 @@ class ConnectionManager(
         _profileLabel.value = activeServer()?.let { serverLabel(it) }
             ?: prefs.lastGoodLabel.ifBlank { defaultLabel() }
         val ok = connectLastKnown()
-        if (ok && activeServer() == null) prefs.lastGoodConfig = lastGoodConfig.orEmpty()
-        return ok
+        if (ok is ConnectionResult.ConnectedHealthy && activeServer() == null) {
+            prefs.lastGoodConfig = lastGoodConfig.orEmpty()
+            return true
+        }
+        return false
     }
 
     /** Выбирает собственный сервер и применяет его (с переподключением). */
@@ -280,16 +357,23 @@ class ConnectionManager(
         return ok
     }
 
-    /** AUTO v1: подбор транспорта по приоритету стран и порядку транспортов.
-     *  Переключение по foreground-приложению НЕ делаем (ломает активные сессии) —
-     *  выбираем один транспорт и держим его (антидребезг: autoHoldMinutes). */
-    suspend fun autoConnect(): Boolean {
+    private data class AutoCandidate(val id: String, val run: suspend () -> Boolean)
+
+    /** AUTO: перебор кандидатов с обязательной проверкой data-plane (P0, 2026-11-18). */
+    suspend fun autoConnect(force: Boolean = false): ConnectionResult {
         val now = System.currentTimeMillis()
-        if (prefs.autoHoldMinutes > 0 && controller.isConnected &&
-            now - lastAutoSwitchAt < prefs.autoHoldMinutes * 60_000L
-        ) {
-            logAuto("anti-bounce: hold ${prefs.autoHoldMinutes}m")
-            return true
+        val hasHealthySession = controller.isConnected && lastAutoSwitchAt > 0L
+        val decision = AntiBounceGate.proceed(
+            isManualConnect = force,
+            candidateDegraded = false,
+            hasHealthySession = hasHealthySession,
+            lastSwitchAt = lastAutoSwitchAt,
+            nowMs = now,
+            holdMinutes = prefs.autoHoldMinutes,
+        )
+        if (decision == Proceed.Deferred) {
+            logAuto("anti-bounce: hold ${prefs.autoHoldMinutes}m (no switch)")
+            return ConnectionResult.ReconnectDeferred
         }
         logAuto("AUTO start; order=${prefs.autoTransportOrder}; countries=${prefs.autoCountryPriority}")
 
@@ -297,7 +381,7 @@ class ConnectionManager(
         val countries = prefs.autoCountryPriority.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
         val strict = prefs.autoCountryStrict
 
-        val candidates = mutableListOf<suspend () -> Boolean>()
+        val candidates = mutableListOf<AutoCandidate>()
 
         transports.forEach { transport ->
             when (transport) {
@@ -306,7 +390,7 @@ class ConnectionManager(
                     logAuto("AWG: own servers=${servers.size}")
                     countries.forEach { cc ->
                         servers.filter { it.countryCode.trim().uppercase() == cc }.forEach { srv ->
-                            candidates += {
+                            candidates += AutoCandidate("awg:${srv.id}") {
                                 controller.currentProfileId = srv.id
                                 _profileLabel.value = "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)"
                                 controller.connect(srv.resolvedConfig)
@@ -314,7 +398,7 @@ class ConnectionManager(
                         }
                     }
                     servers.forEach { srv ->
-                        candidates += {
+                        candidates += AutoCandidate("awg:${srv.id}") {
                             controller.currentProfileId = srv.id
                             _profileLabel.value = "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)"
                             controller.connect(srv.resolvedConfig)
@@ -325,7 +409,7 @@ class ConnectionManager(
                     val profiles = store.list()
                     countries.forEach { cc ->
                         profiles.filter { it.observedCountry.trim().uppercase() == cc }.forEach { prof ->
-                            candidates += { connectGeneratedProfile(prof) }
+                            candidates += AutoCandidate("warp:${prof.host}:${prof.port}") { connectGeneratedProfile(prof) }
                         }
                     }
                     // Встроенные публичные NL/FI/US: приоритет — по измеренной стране
@@ -345,14 +429,14 @@ class ConnectionManager(
                         allowed.sortedBy { pub ->
                             priorityIndex((measured[pub.id] ?: "").substringBefore('@').uppercase())
                         }.forEach { pub ->
-                            candidates += { connectPublicServer(pub.id) }
+                            candidates += AutoCandidate("public:${pub.id}") { connectPublicServer(pub.id) }
                         }
                         if (allowed.isEmpty()) logAuto("публичные: согласия нет или страна не свежая (>7 дней)")
                     }
-                    candidates += { connectWarpWithGeneration() }
+                    candidates += AutoCandidate("warp:generated") { connectWarpWithGeneration() is ConnectionResult.ConnectedHealthy }
                 }
                 "DPI" -> {
-                    candidates += {
+                    candidates += AutoCandidate("dpi") {
                         logAuto("DPI candidate")
                         controller.currentProfileId = "dpi"
                         _profileLabel.value = "AUTO · DPI"
@@ -365,13 +449,31 @@ class ConnectionManager(
         if (strict && candidates.isEmpty()) {
             logAuto("strict: no candidates — abort")
             _profileLabel.value = "AUTO · нет профиля нужной страны"
-            return false
+            return ConnectionResult.NoWorkingRoute(listOf("strict: no candidates of requested countries"))
         }
 
+        val cycle = CandidateCycle()
+        cycle.beginCycle()
         var dpiFallback = false
         for ((i, candidate) in candidates.withIndex()) {
-            logAuto("try candidate #${i + 1}")
-            if (!candidate()) continue
+            if (!cycle.canTry(candidate.id, now)) {
+                logAuto("try candidate #${i + 1} ${candidate.id}: skipped (quarantine)")
+                continue
+            }
+            logAuto("try candidate #${i + 1} ${candidate.id}")
+            val transportOk = candidate.run()
+            if (!transportOk) {
+                logAuto("candidate ${candidate.id}: TRANSPORT_FAIL(stage=transport)")
+                cycle.recordFailure(candidate.id, now, "transport fail")
+                continue
+            }
+            val dp = validateDataPlane(candidate.id)
+            if (dp !is ConnectionResult.ConnectedHealthy) {
+                val detail = (dp as? ConnectionResult.CandidateDegraded)?.detail ?: "data-plane failed"
+                cycle.recordFailure(candidate.id, now, detail)
+                logAuto("candidate ${candidate.id}: data-plane rejected -> next candidate")
+                continue
+            }
             logAuto("candidate #${i + 1} selected: ${controller.currentProfileId}")
             val isDpi = controller.currentProfileId == "dpi"
             if (isDpi && prefs.autoTelegramViaVpn) {
@@ -383,6 +485,8 @@ class ConnectionManager(
                     autoStatus = "Telegram DC недоступны через DPI (${dc.error ?: "нет ответа"}) — ищем AWG/WARP"
                     if (!dpiFallback) {
                         dpiFallback = true
+                        cycle.recordFailure(candidate.id, now, "telegram-dc-down")
+                        runCatching { controller.disconnect() }
                         continue
                     }
                 } else {
@@ -392,12 +496,14 @@ class ConnectionManager(
             }
             lastAutoSwitchAt = System.currentTimeMillis()
             logAuto("done: profile=${controller.currentProfileId}")
-            return true
+            return ConnectionResult.ConnectedHealthy
         }
         if (dpiFallback) {
             autoStatus = "Telegram DC недоступны: подключён DPI (AWG/WARP не найден)"
         }
-        return false
+        val reasons = cycle.failures()
+        logAuto("no working route: candidates rejected: $reasons")
+        return ConnectionResult.NoWorkingRoute(reasons)
     }
 
     /** Статус AUTO для UI (последняя причина выбора/отказа). */

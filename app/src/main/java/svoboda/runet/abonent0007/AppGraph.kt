@@ -60,7 +60,7 @@ class SvobodaApp : Application() {
             prefs = AppGraph.prefs,
             scope = AppGraph.appScope,
             manualConnect = { AppGraph.manager.connectManual() },
-            autoConnect = { AppGraph.manager.connectLastKnown() },
+            autoConnect = { force -> AppGraph.manager.connectLastKnown(force) },
             disconnectAction = { AppGraph.vpn.disconnect() },
         )
         AppGraph.dpi = svoboda.runet.abonent0007.dpi.DpiEngine(

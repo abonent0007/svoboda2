@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 207
-        versionName = "2.0.7"
+        versionName = "2.0.7-rc1"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
@@ -99,4 +99,6 @@ dependencies {
     implementation(project(":tunnel"))
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.tooling.preview)
+
+    testImplementation(libs.junit)
 }
