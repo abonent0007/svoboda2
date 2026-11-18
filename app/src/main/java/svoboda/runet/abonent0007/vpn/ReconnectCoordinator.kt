@@ -163,9 +163,10 @@ class ReconnectCoordinator(
             }
             is ConnectionResult.ReconnectDeferred -> {
                 // Отложенная попытка — НЕ показатель подключения.
-                // По смыслу ветки туннель уже здоров; оставляем как есть, но если
-                // экран завис на CONNECTING без prior state — показываем здоровое состояние.
-                if (_state.value == ReconnectState.CONNECTING && controller.isConnected) {
+                // По смыслу ветки туннель уже здоров (anti-bounce сработал только на HEALTHY);
+                // оставляем как есть, но если экран завис на CONNECTING — возвращаемся в CONNECTED.
+                // DEGRADED-туннель сюда не попадает: для него hasHealthySession=false и запуск идёт через перебор.
+                if (_state.value == ReconnectState.CONNECTING && controller.phase.value == VpnPhase.CONNECTED) {
                     _state.value = ReconnectState.CONNECTED
                     controller.setStatus(null)
                 }

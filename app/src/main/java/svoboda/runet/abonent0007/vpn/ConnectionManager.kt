@@ -417,7 +417,9 @@ class ConnectionManager(
     /** AUTO: перебор кандидатов с обязательной проверкой data-plane (P0, 2026-11-18). */
     suspend fun autoConnect(force: Boolean = false): ConnectionResult {
         val now = System.currentTimeMillis()
-        val hasHealthySession = controller.isConnected && lastAutoSwitchAt > 0L
+        // Пропускаем антидребезг ТОЛЬКО когда уже есть подтверждённый HEALTHY-сеанс.
+        // DEGRADED-сессия не считается healthy: ей нужен failover, а не удержание кандидата.
+        val hasHealthySession = controller.phase.value == VpnPhase.CONNECTED && lastAutoSwitchAt > 0L
         val decision = AntiBounceGate.proceed(
             bypassHold = force,
             hasHealthySession = hasHealthySession,
