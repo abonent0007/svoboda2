@@ -81,29 +81,41 @@ class ReconnectCoordinator(
     }
 
     private fun onNetworkEvent() {
+        VpnLog.i("onNetworkEvent entry")
         scope.launch {
             delay(2000)
-            if (!intent.shouldBeConnected) return@launch
+            if (!intent.shouldBeConnected) {
+                VpnLog.i("onNetworkEvent skip=incoming_shouldBeConnected=false")
+                return@launch
+            }
             val currentSession = intent.sessionId
             if (!isNetworkAvailable()) {
+                VpnLog.i("onNetworkEvent skip=network_unavailable session=$currentSession")
                 _state.value = ReconnectState.WAITING_FOR_NETWORK
                 controller.setStatus("Ожидание сети…")
                 return@launch
             }
             if (isCaptivePortal()) {
+                VpnLog.i("onNetworkEvent skip=captive_portal session=$currentSession")
                 _state.value = ReconnectState.WAITING_FOR_NETWORK
                 controller.setStatus("Требуется авторизация в сети")
                 return@launch
             }
+            VpnLog.i("onNetworkEvent proceed=checkTunnel req=false session=$currentSession")
             mutex.withLock {
-                if (intent.sessionId != currentSession) return@withLock
+                if (intent.sessionId != currentSession) {
+                    VpnLog.i("onNetworkEvent skip=sessionChanged session=$currentSession now=${intent.sessionId}")
+                    return@withLock
+                }
                 val healthy = checkTunnel()
                 if (healthy) {
                     _state.value = ReconnectState.CONNECTED
                     failureCount = 0
                     // Соединение восстановлено — убираем устаревший обратный отсчёт.
                     controller.setStatus(null)
+                    VpnLog.i("onNetworkEvent result=healthy session=$currentSession state=CONNECTED")
                 } else {
+                    VpnLog.i("onNetworkEvent result=unhealthy session=$currentSession call=scheduleReconnect")
                     scheduleReconnect(currentSession)
                 }
             }
@@ -121,18 +133,29 @@ class ReconnectCoordinator(
             !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
-    private fun checkTunnel(): Boolean {
+    private fun checkTunnel(): Boolean = runBlocking {
         // Во время бенчмарка стратегий health-проверка не должна вмешиваться:
         // ciadpi перезапускается, и контрольный SOCKS-проб был бы ложным сигналом.
-        if (testingMode) return true
-        return runBlocking {
-            // DPI-режим: рукопожатия нет; здоровье проверяем через локальный SOCKS5 (ciadpi).
-            controller.dpiProbePort?.let { port ->
-                return@runBlocking NetProbe.fetchExitViaSocks(port) != null
-            }
-            if (controller.lastHandshake() <= 0) return@runBlocking false
-            NetProbe.fetchExit() != null
+        if (testingMode) {
+            VpnLog.i("checkTunnel result=bypass_testingMode")
+            return@runBlocking true
         }
+        val sessionId = intent.sessionId
+        val port = controller.dpiProbePort
+        if (port != null) {
+            val exit = NetProbe.fetchExitViaSocks(port)
+            VpnLog.i("checkTunnel dpi port=$port session=$sessionId result=${if (exit != null) "healthy" else "unhealthy"}")
+            return@runBlocking exit != null
+        }
+        val hs = controller.lastHandshake()
+        if (hs <= 0) {
+            VpnLog.i("checkTunnel session=$sessionId result=unhealthy reason=handshake_not_ready handshake=$hs")
+            return@runBlocking false
+        }
+        val exit = NetProbe.fetchExit()
+        val ok = exit != null
+        VpnLog.i("checkTunnel session=$sessionId handshake=$hs result=${if (ok) "healthy" else "unhealthy"} exit=${exit?.ip}")
+        ok
     }
 
     suspend fun userConnect(manual: Boolean) = mutex.withLock {
@@ -145,15 +168,22 @@ class ReconnectCoordinator(
         // Новая попытка — убираем устаревший обратный отсчёт прошлой ошибки.
         controller.setStatus(null)
         val result = try {
+            VpnLog.i("userConnect begin manual=$manual session=$currentSession phase=${_state.value}")
             if (manual) manualConnect() else autoConnect(false, false)
         } catch (ce: kotlinx.coroutines.CancellationException) {
             // Управляющее событие: отмена — не сетевая ошибка и не повод перетирать статус.
+            VpnLog.i("userConnect cancelled manual=$manual session=$currentSession")
             throw ce
         } catch (t: Throwable) {
             // Никаких exception.toString() в пользовательском статусе.
+            VpnLog.e("userConnect internal manual=$manual session=$currentSession class=${t::class.java.simpleName}", t)
             ConnectionResult.NoWorkingRoute(listOf("internal: ${t::class.java.simpleName}"))
         }
-        if (intent.sessionId != currentSession) return@withLock
+        if (intent.sessionId != currentSession) {
+            VpnLog.i("userConnect stale result session=$currentSession now=${intent.sessionId}")
+            return@withLock
+        }
+        VpnLog.i("userConnect result=${result::class.java.simpleName} session=$currentSession phase=${_state.value}")
         when (result) {
             is ConnectionResult.ConnectedHealthy -> {
                 _state.value = ReconnectState.CONNECTED
@@ -204,7 +234,10 @@ class ReconnectCoordinator(
     }
 
     private suspend fun scheduleReconnect(currentSession: Long) {
-        if (!intent.shouldBeConnected || intent.sessionId != currentSession) return
+        if (!intent.shouldBeConnected || intent.sessionId != currentSession) {
+            VpnLog.i("scheduleReconnect skip shouldBeConnected=${intent.shouldBeConnected} session=$currentSession now=${intent.sessionId}")
+            return
+        }
         // Снимок здоровья на случай, если к моменту ветки FAILED/RECONNECT кто-то
         // уже успел заменить health-job (не удаляем чужой/новый).
         val expectedHealth = jobs.snapshotHealth()
@@ -214,25 +247,36 @@ class ReconnectCoordinator(
         failureCount = (failureCount + 1).coerceAtMost(backoffBase.size)
         val jitter = (baseDelay * 0.2 * (Random.nextDouble() * 2 - 1)).toLong()
         val delaySec = (baseDelay + jitter).coerceAtLeast(1)
+        VpnLog.i("scheduleReconnect session=$currentSession baseDelay=${baseDelay}s failureCount=$failureCount delay=${delaySec}s state=RECONNECT_WAIT")
         _state.value = ReconnectState.RECONNECT_WAIT
         controller.setStatus("Повтор через ${delaySec}с…")
         jobs.setReconnect(scope.launch {
             delay(delaySec * 1000L)
             if (!intent.shouldBeConnected || intent.sessionId != currentSession) return@launch
             _state.value = ReconnectState.RECONNECTING
+            VpnLog.i("scheduleReconnect tick session=$currentSession now=${intent.sessionId} shouldBeConnected=${intent.shouldBeConnected}")
             try {
                 mutex.withLock {
-                    if (intent.sessionId != currentSession) return@withLock
+                    if (intent.sessionId != currentSession) {
+                        VpnLog.i("scheduleReconnect stale session=$currentSession now=${intent.sessionId}")
+                        return@withLock
+                    }
                     val result = try {
                         // Failover от доказанно нерабочего маршрута: антидребезг не применяется,
                         // но quarantine — применяется (автоматика не долбит провалившиеся endpoint).
                         autoConnect(true, false)
                     } catch (ce: kotlinx.coroutines.CancellationException) {
+                        VpnLog.i("scheduleReconnect cancelled session=$currentSession")
                         throw ce
                     } catch (t: Throwable) {
+                        android.util.Log.e("SvobodaVpn", "scheduleReconnect internal session=$currentSession", t)
                         ConnectionResult.NoWorkingRoute(listOf("internal: ${t::class.java.simpleName}"))
                     }
-                    if (intent.sessionId != currentSession) return@withLock
+                    if (intent.sessionId != currentSession) {
+                        VpnLog.i("scheduleReconnect stale autoConnect session=$currentSession now=${intent.sessionId}")
+                        return@withLock
+                    }
+                    VpnLog.i("scheduleReconnect result=${result::class.java.simpleName} session=$currentSession")
                     when (result) {
                         is ConnectionResult.ConnectedHealthy -> {
                             _state.value = ReconnectState.CONNECTED
@@ -280,13 +324,19 @@ class ReconnectCoordinator(
     }
 
     private fun startHealth(currentSession: Long) {
+        VpnLog.i("startHealth entry session=$currentSession")
         cancelHealth()
         jobs.setHealth(scope.launch {
             var consecutiveFailures = 0
+            VpnLog.i("startHealth jobLaunched session=$currentSession conFail=$consecutiveFailures")
             while (intent.shouldBeConnected && intent.sessionId == currentSession) {
                 delay(30000)
-                if (!intent.shouldBeConnected || intent.sessionId != currentSession) break
+                if (!intent.shouldBeConnected || intent.sessionId != currentSession) {
+                    VpnLog.i("startHealth loopBreak session=$currentSession shouldBeConnected=${intent.shouldBeConnected} sessionNow=${intent.sessionId}")
+                    break
+                }
                 val healthy = checkTunnel()
+                VpnLog.i("startHealth tick session=$currentSession healthy=$healthy conFail=$consecutiveFailures")
                 if (healthy) {
                     consecutiveFailures = 0
                     _state.value = ReconnectState.CONNECTED
@@ -299,6 +349,7 @@ class ReconnectCoordinator(
                         controller.markDegraded(true)
                     }
                     if (consecutiveFailures >= 3) {
+                        VpnLog.i("startHealth triggerDegraded3 session=$currentSession scheduleReconnect")
                         _state.value = ReconnectState.DEGRADED
                         scheduleReconnect(currentSession)
                         break

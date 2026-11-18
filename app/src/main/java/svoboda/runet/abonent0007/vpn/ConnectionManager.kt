@@ -447,8 +447,10 @@ class ConnectionManager(
      *  @param bypassHold true — обход антидребезга (ручное ПОДКЛЮЧИТЬ / failover с деградированного маршрута).
      *  @param bypassQuarantine true — ручная попытка "ПОВТОРИТЬ"; автоматика quarantine не обходит. */
     suspend fun autoConnect(bypassHold: Boolean = false, bypassQuarantine: Boolean = false): ConnectionResult {
+        VpnLog.i("autoConnect entry bypassHold=$bypassHold bypassQuarantine=$bypassQuarantine phase=${controller.phase.value}")
         val now = System.currentTimeMillis()
         val hasHealthySession = controller.phase.value == VpnPhase.CONNECTED && lastAutoSwitchAt > 0L
+        VpnLog.i("autoConnect healthySession=$hasHealthySession lastAutoSwitchAt=$lastAutoSwitchAt")
         val decision = AntiBounceGate.proceed(
             bypassHold = bypassHold,
             hasHealthySession = hasHealthySession,
@@ -456,6 +458,7 @@ class ConnectionManager(
             nowMs = now,
             holdMinutes = prefs.autoHoldMinutes,
         )
+        VpnLog.i("autoConnect antiBounce decision=$decision")
         if (decision == Proceed.Deferred) {
             logAuto("anti-bounce: hold ${prefs.autoHoldMinutes}m (no switch)")
             return ConnectionResult.ReconnectDeferred
@@ -636,6 +639,7 @@ class ConnectionManager(
     private fun logAuto(event: String) {
         val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
         val line = "$stamp $event"
+        VpnLog.i("[\$autoLog] $event")
         autoLog = (autoLog + line).takeLast(150)
         runCatching {
             java.io.File(AppGraph.appContext.filesDir, "auto_log.txt").appendText(line + "\n", Charsets.UTF_8)

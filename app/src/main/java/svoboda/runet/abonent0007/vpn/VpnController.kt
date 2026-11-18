@@ -109,6 +109,7 @@ class VpnController(
 
     /** Явно переводит фазу в/из DEGRADED (используется health-монитором). */
     fun markDegraded(degraded: Boolean) {
+        android.util.Log.i("SvobodaVpn", "markDegraded degraded=$degraded oldPhase=${_phase.value}")
         _phase.value = if (degraded) VpnPhase.DEGRADED else VpnPhase.CONNECTED
         stateRepo?.setVpn(if (degraded) VpnSessionPhase.DEGRADED else VpnSessionPhase.CONNECTED)
         stateRepo?.setTransport(if (degraded) TunnelTransportPhase.DEGRADED else TunnelTransportPhase.FLOWING)
@@ -135,6 +136,7 @@ class VpnController(
     }
 
     suspend fun connect(configText: String): Boolean = withContext(Dispatchers.IO) {
+        android.util.Log.i("SvobodaVpn", "connect PREPARING start")
         _phase.value = VpnPhase.PREPARING
         stateRepo?.setVpn(VpnSessionPhase.PREPARING)
         stateRepo?.setTransport(TunnelTransportPhase.IDLE)
@@ -155,6 +157,7 @@ class VpnController(
                 ),
             )
             activeConfigText = configText
+            android.util.Log.i("SvobodaVpn", "connect UP handshake poll start")
             _phase.value = VpnPhase.CONNECTING
             stateRepo?.setVpn(VpnSessionPhase.CONNECTING)
             stateRepo?.setTransport(TunnelTransportPhase.CONNECTING)
@@ -171,6 +174,7 @@ class VpnController(
                 delay(HANDSHAKE_POLL_MS)
             }
             if (!handshakeUp) {
+                android.util.Log.w("SvobodaVpn", "connect handshake_timeout_down")
                 backend.setState(tunnel, Tunnel.State.DOWN, null)
                 _phase.value = VpnPhase.ERROR
             stateRepo?.setVpn(VpnSessionPhase.ERROR)
@@ -178,6 +182,7 @@ class VpnController(
                 _error.value = "Нет ответа сервера (handshake timeout)"
                 return@withContext false
             }
+            android.util.Log.i("SvobodaVpn", "connect handshake_up")
 
             // Proof: реальный трафик через туннель.
             // Одной неудачи мало: пробуем до 3 раз. При первой ошибке туннель НЕ гасим —
@@ -185,6 +190,7 @@ class VpnController(
             _phase.value = VpnPhase.VERIFYING
             stateRepo?.setVpn(VpnSessionPhase.ESTABLISHING)
             stateRepo?.setTransport(TunnelTransportPhase.HANDSHAKING)
+            android.util.Log.i("SvobodaVpn", "connect verifying_start")
             suspend fun tryFetch(): NetProbe.ExitInfo? {
                 var r = NetProbe.fetchExit()
                 repeat(2) { attempt ->
@@ -202,8 +208,10 @@ class VpnController(
                 stateRepo?.setVpn(VpnSessionPhase.DEGRADED)
                 stateRepo?.setTransport(TunnelTransportPhase.DEGRADED)
                 _error.value = "Туннель установлен, интернет не подтверждён"
+                android.util.Log.w("SvobodaVpn", "connect degraded_exit_null")
                 return@withContext true
             }
+            android.util.Log.i("SvobodaVpn", "connect connected exit=${exit.ip} country=${exit.country}")
             _exit.value = exit
             _phase.value = VpnPhase.CONNECTED
             stateRepo?.setVpn(VpnSessionPhase.CONNECTED)
