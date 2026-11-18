@@ -62,7 +62,11 @@ object DataPlane {
         Outcome(cf.await(), g.await())
     }
 
-    private enum class Expect { CF, G204 }
+    internal enum class Expect { CF, G204 }
+
+    /** Для unit-тестов: проба по произвольному URL с ожидаемым видом ответа. */
+    internal suspend fun probeEndpointForTest(url: String, expect: Expect): EndpointProbe =
+        probe(url, socksPort = null, expect = expect)
 
     private suspend fun probe(url: String, socksPort: Int?, expect: Expect): EndpointProbe =
         withContext(Dispatchers.IO) {
@@ -73,11 +77,15 @@ object DataPlane {
                     val code = resp.code
                     when (expect) {
                         Expect.CF -> {
-                            // Ограничиваем чтение тела (16 КБ достаточно для строки ip=...)
+                            // Ограничиваем чтение тела (16 КБ достаточно для строки ip=...), вплоть до EOF.
                             val body = resp.body?.source()?.use { src ->
                                 val buf = okio.Buffer()
-                                src.request(MAX_CF_BODY_BYTES)
-                                buf.write(src, MAX_CF_BODY_BYTES)
+                                var total = 0L
+                                while (total < MAX_CF_BODY_BYTES) {
+                                    val read = src.read(buf, MAX_CF_BODY_BYTES - total)
+                                    if (read == -1L) break
+                                    total += read
+                                }
                                 buf.readUtf8()
                             }.orEmpty()
                             val ok = resp.isSuccessful && Regex("""(?m)^ip=\S+""").containsMatchIn(body)
