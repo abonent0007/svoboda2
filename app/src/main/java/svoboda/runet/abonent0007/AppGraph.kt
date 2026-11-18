@@ -54,6 +54,8 @@ class SvobodaApp : Application() {
             prefs = AppGraph.prefs,
             serverStore = AppGraph.servers,
         )
+        // Предикат «user intent активен» для ConnectionManager: обрывай цикл кандидатов при ОТКЛЮЧИТЬ.
+        // (Каппинг — lateinit у reconnect; регистрируем после его создания ниже.)
         AppGraph.reconnect = ReconnectCoordinator(
             context = this,
             controller = AppGraph.vpn,
@@ -63,6 +65,8 @@ class SvobodaApp : Application() {
             autoConnect = { force -> AppGraph.manager.connectLastKnown(force) },
             disconnectAction = { AppGraph.vpn.disconnect() },
         )
+        // Предикат «user intent активен» для ConnectionManager: обрывай цикл кандидатов при ОТКЛЮЧИТЬ.
+        AppGraph.manager.intentCheck = { AppGraph.reconnect.shouldBeConnected }
         AppGraph.dpi = svoboda.runet.abonent0007.dpi.DpiEngine(
             context = this,
             prefs = AppGraph.prefs,

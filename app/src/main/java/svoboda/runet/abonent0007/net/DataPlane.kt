@@ -25,6 +25,7 @@ import javax.net.ssl.SSLException
 object DataPlane {
 
     private const val TIMEOUT_SEC = 5L
+    private const val MAX_CF_BODY_BYTES = 16L * 1024
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
@@ -72,7 +73,13 @@ object DataPlane {
                     val code = resp.code
                     when (expect) {
                         Expect.CF -> {
-                            val body = resp.body?.string().orEmpty()
+                            // Ограничиваем чтение тела (16 КБ достаточно для строки ip=...)
+                            val body = resp.body?.source()?.use { src ->
+                                val buf = okio.Buffer()
+                                src.request(MAX_CF_BODY_BYTES)
+                                buf.write(src, MAX_CF_BODY_BYTES)
+                                buf.readUtf8()
+                            }.orEmpty()
                             val ok = resp.isSuccessful && Regex("""(?m)^ip=\S+""").containsMatchIn(body)
                             if (ok) EndpointProbe.pass(code)
                             else EndpointProbe.fail(FailureKind.HTTPS, "http=$code, no-ip-line", code)

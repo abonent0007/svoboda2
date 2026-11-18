@@ -6,7 +6,6 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +43,7 @@ class ReconnectCoordinator(
     private val intent = ConnectionIntent()
     private val _state = MutableStateFlow(ReconnectState.IDLE)
     val state: StateFlow<ReconnectState> = _state.asStateFlow()
+    private val jobs = SingleJobTracker()
 
     @Volatile
     var testingMode: Boolean = false
@@ -51,8 +51,6 @@ class ReconnectCoordinator(
     val shouldBeConnected: Boolean get() = intent.shouldBeConnected
 
     private var failureCount = 0
-    private var healthJob: Job? = null
-    private var reconnectJob: Job? = null
     private var latestCaps: NetworkCapabilities? = null
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
@@ -61,8 +59,7 @@ class ReconnectCoordinator(
     suspend fun <T> withVpnLock(block: suspend () -> T): T = mutex.withLock { block() }
 
     fun cancelHealth() {
-        healthJob?.cancel()
-        healthJob = null
+        jobs.clearHealth()
     }
 
     fun startNetworkMonitoring() {
@@ -209,7 +206,7 @@ class ReconnectCoordinator(
         val delaySec = (baseDelay + jitter).coerceAtLeast(1)
         _state.value = ReconnectState.RECONNECT_WAIT
         controller.setStatus("Повтор через ${delaySec}с…")
-        reconnectJob = scope.launch {
+        jobs.setReconnect(scope.launch {
             delay(delaySec * 1000L)
             if (!intent.shouldBeConnected || intent.sessionId != currentSession) return@launch
             _state.value = ReconnectState.RECONNECTING
@@ -254,17 +251,16 @@ class ReconnectCoordinator(
                 // Отмена — управляющее событие: никаких «ошибок» в статусе.
                 return@launch
             }
-        }
+        })
     }
 
     private fun cancelReconnect() {
-        reconnectJob?.cancel()
-        reconnectJob = null
+        jobs.clearReconnect()
     }
 
     private fun startHealth(currentSession: Long) {
         cancelHealth()
-        healthJob = scope.launch {
+        jobs.setHealth(scope.launch {
             var consecutiveFailures = 0
             while (intent.shouldBeConnected && intent.sessionId == currentSession) {
                 delay(30000)
@@ -289,6 +285,6 @@ class ReconnectCoordinator(
                     _state.value = ReconnectState.DEGRADED
                 }
             }
-        }
+        })
     }
 }

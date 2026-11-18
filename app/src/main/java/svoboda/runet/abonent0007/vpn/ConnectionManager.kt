@@ -48,6 +48,10 @@ class ConnectionManager(
     private val _profileLabel = MutableStateFlow(defaultLabel())
     val profileLabel: StateFlow<String> = _profileLabel.asStateFlow()
 
+    /** AppGraph-инжектированный предикат «user intent активен»: обрыв цикла кандидатов при ОТКЛЮЧИТЬ. */
+    @Volatile
+    var intentCheck: () -> Boolean = { true }
+
     /** Кэш последнего удачного конфига — для автопереподключения. */
     private var lastGoodConfig: String? = prefs.lastGoodConfig.takeIf { it.isNotBlank() }
 
@@ -466,6 +470,11 @@ class ConnectionManager(
         cycle.beginCycle()
         var dpiFallback = false
         for ((i, candidate) in candidates.withIndex()) {
+            if (!intentCheck()) {
+                // Пользователь нажал ОТКЛЮЧИТЬ во время перебора: ни одной новой попытки туннеля.
+                logAuto("cycle aborted: user disconnected")
+                return ConnectionResult.UserDisconnected
+            }
             if (!cycle.canTry(candidate.id, now)) {
                 logAuto("try candidate #${i + 1} ${candidate.id}: skipped (quarantine)")
                 continue
@@ -476,6 +485,11 @@ class ConnectionManager(
                 logAuto("candidate ${candidate.id}: TRANSPORT_FAIL(stage=transport)")
                 cycle.recordFailure(candidate.id, now, "transport fail")
                 continue
+            }
+            if (!intentCheck()) {
+                logAuto("cycle aborted post-connect: user disconnected")
+                runCatching { controller.disconnect() }
+                return ConnectionResult.UserDisconnected
             }
             val dp = validateDataPlane(candidate.id)
             if (dp !is ConnectionResult.ConnectedHealthy) {
@@ -503,6 +517,11 @@ class ConnectionManager(
                     logAuto("Telegram DC reachable")
                     autoStatus = "Telegram DC доступны"
                 }
+            }
+            if (!intentCheck()) {
+                logAuto("cycle aborted post-validation: user disconnected")
+                runCatching { controller.disconnect() }
+                return ConnectionResult.UserDisconnected
             }
             lastAutoSwitchAt = System.currentTimeMillis()
             logAuto("done: profile=${controller.currentProfileId}")
