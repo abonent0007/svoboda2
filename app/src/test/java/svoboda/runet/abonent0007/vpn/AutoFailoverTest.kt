@@ -85,89 +85,124 @@ class AutoFailoverTest {
         assertFalse(svoboda.runet.abonent0007.net.DataPlane.isUsable(none))
     }
 
-    // ---------- CandidateCycle: цикл перебора и quarantine ----------
+    // ---------- CandidateCycle: цикл перебора и quarantine (инжектированный clock) ----------
+
+    private fun testCycle(): Pair<CandidateCycle, (Long) -> Unit> {
+        var t = 10_000L
+        val c = CandidateCycle(clock = { t })
+        return Pair(c, { t += it })
+    }
 
     @Test
     fun `failed candidate excluded from current cycle`() {
-        val c = CandidateCycle()
+        val (c, tick) = testCycle()
         c.beginCycle()
-        val t = 1_000L
-        assertTrue(c.canTry("awg:1", t))
-        c.recordFailure("awg:1", t, "handshake")
-        assertFalse("failed candidate not tryable in cycle", c.canTry("awg:1", t))
+        assertTrue(c.canTry("awg:1"))
+        c.recordFailure("awg:1", "handshake")
+        assertFalse("failed candidate not tryable in cycle", c.canTry("awg:1"))
         assertEquals(listOf("awg:1"), c.failures())
-        // Новый цикл: «внутрицикловый» отказ забывается, quarantine остаётся.
         c.beginCycle()
-        assertFalse("quarantine persists across cycles", c.canTry("awg:1", t + 1))
+        tick(1_000)
+        assertFalse("quarantine persists across cycles", c.canTry("awg:1"))
     }
 
     @Test
     fun `quarantine lifts after window`() {
-        val c = CandidateCycle()
+        val (c, tick) = testCycle()
         c.beginCycle()
-        val t0 = 1_000L
-        c.recordFailure("public:1", t0, "data-plane")
+        c.recordFailure("public:1", "data-plane")
         c.beginCycle()
-        assertFalse(c.canTry("public:1", t0 + CandidateCycle.QUARANTINE_MS - 1))
-        assertTrue(c.canTry("public:1", t0 + CandidateCycle.QUARANTINE_MS))
+        tick(CandidateCycle.QUARANTINE_MS - 1)
+        assertFalse(c.canTry("public:1"))
+        tick(1) // ровно окно истекло
+        assertTrue(c.canTry("public:1"))
     }
 
     @Test
     fun `exhausted candidates yield zero tryable`() {
-        val c = CandidateCycle()
+        val (c, _) = testCycle()
         c.beginCycle()
-        val t = 5_000L
-        c.recordFailure("awg:1", t, "handshake")
-        c.recordFailure("public:any_1", t, "data-plane")
-        c.recordFailure("dpi", t, "telegram-dc-down")
-        assertFalse(c.canTry("awg:1", t))
-        assertFalse(c.canTry("public:any_1", t))
-        assertFalse(c.canTry("dpi", t))
+        c.recordFailure("awg:1", "handshake")
+        c.recordFailure("public:any_1", "data-plane")
+        c.recordFailure("dpi", "telegram-dc-down")
+        assertFalse(c.canTry("awg:1"))
+        assertFalse(c.canTry("public:any_1"))
+        assertFalse(c.canTry("dpi"))
         assertEquals(3, c.failures().size)
     }
 
     @Test
     fun `new cycle forgets in-cycle marks but keeps backoff`() {
-        val c = CandidateCycle()
+        val (c, tick) = testCycle()
         c.beginCycle()
-        val t = 9_000L
-        c.recordFailure("warp:generated", t, "transport")
+        c.recordFailure("warp:generated", "transport")
         c.beginCycle()
         // В quarantine — нельзя даже в новом цикле.
-        assertFalse(c.canTry("warp:generated", t))
+        assertFalse(c.canTry("warp:generated"))
         // Дальше — можно, когда окно истечёт.
-        assertTrue(c.canTry("warp:generated", t + CandidateCycle.QUARANTINE_MS))
+        tick(CandidateCycle.QUARANTINE_MS)
+        assertTrue(c.canTry("warp:generated"))
+    }
+
+    @Test
+    fun `quarantine clock starts at actual failure time, not at cycle start`() {
+        var t = 1_000L
+        val c = CandidateCycle(clock = { t })
+        c.beginCycle()
+        t += 9 * 60_000L
+        c.recordFailure("slow:1", "data-plane")
+        t += 2 * 60_000L // +11 мин от старта цикла, но всего +2 мин от факта отказа
+        c.beginCycle()   // новый цикл снимает in-cycle отметку — решает именно quarantine
+        assertFalse("full 10min window must respect actual failure time", c.canTry("slow:1"))
+        t += 8 * 60_000L // итого 10 мин от отказа
+        assertTrue("after exactly 10min from failure, candidate must be re-eligible", c.canTry("slow:1"))
+    }
+
+    @Test
+    fun `quarantine lapsing during a long cycle restores eligibility`() {
+        var t = 1_000L
+        val c = CandidateCycle(clock = { t })
+        c.beginCycle()
+        t += 9 * 60_000L // долгая подготовка к отказу — время не есть факт отказа
+        c.recordFailure("long:1", "handshake")
+        t += CandidateCycle.QUARANTINE_MS + 1
+        c.beginCycle() // новый цикл; окно по факту отказа истекло
+        assertTrue("window expiring means re-eligibility in next cycle", c.canTry("long:1"))
     }
 
     @Test
     fun `nextEligibleAt returns earliest quarantine expiry`() {
-        val c = CandidateCycle()
+        var t = 1_000L
+        val c = CandidateCycle(clock = { t })
         c.beginCycle()
-        val t0 = 1_000L
-        c.recordFailure("a", t0, "x")
-        c.recordFailure("b", t0 + 100, "x")
-        assertEquals(t0 + CandidateCycle.QUARANTINE_MS, c.nextEligibleAt(t0))
-        // b ещё в quarantine до истечения своего окна (a уже отпустил)
-        assertEquals(t0 + 100 + CandidateCycle.QUARANTINE_MS, c.nextEligibleAt(t0 + CandidateCycle.QUARANTINE_MS + 1))
+        c.recordFailure("a", "x")
+        val tB = t + 100
+        t = tB
+        c.recordFailure("b", "x")
+        assertEquals(1_000L + CandidateCycle.QUARANTINE_MS, c.nextEligibleAt())
+        // a истёк, b ещё в окне.
+        t = 1_000L + CandidateCycle.QUARANTINE_MS + 1
+        assertEquals(tB + CandidateCycle.QUARANTINE_MS, c.nextEligibleAt())
         // После истечения обоих окон — никого нет.
-        assertEquals(null, c.nextEligibleAt(t0 + 100 + CandidateCycle.QUARANTINE_MS + 1))
+        t = tB + CandidateCycle.QUARANTINE_MS + 1
+        assertEquals(null, c.nextEligibleAt())
     }
 
     @Test
     fun `all quarantine formula covers mixed previously-quarantined and freshly-failed`() {
-        val c = CandidateCycle()
+        var t = 1_000L
+        val c = CandidateCycle(clock = { t })
         // Ранний отказ одного кандидата.
         c.beginCycle()
-        val tEarly = 1_000L
-        c.recordFailure("public:any_1", tEarly, "data-plane")
+        c.recordFailure("public:any_1", "data-plane")
         // Новый цикл: два других проваливались сейчас.
+        t += 1_000
         c.beginCycle()
-        val tNow = tEarly + 1000
-        c.recordFailure("dpi", tNow, "data-plane")
-        c.recordFailure("public:fi_1", tNow, "transport")
+        c.recordFailure("dpi", "data-plane")
+        c.recordFailure("public:fi_1", "transport")
         // Все три недоступны, хотя причины непусты (failures — только текущий цикл).
         val candidates = listOf("public:any_1", "dpi", "public:fi_1")
-        assertTrue("every candidate must be unavailable", candidates.all { !c.canTry(it, tNow) })
+        assertTrue("every candidate must be unavailable", candidates.all { !c.canTry(it) })
         assertEquals(2, c.failures().size)
     }
 

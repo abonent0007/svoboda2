@@ -27,6 +27,10 @@ object DataPlane {
     private const val TIMEOUT_SEC = 5L
     private const val MAX_CF_BODY_BYTES = 16L * 1024
 
+    /** Production-цели для data-plane валидации (единый источник правды для тестов). */
+    const val CF_TRACE_URL = "https://cloudflare.com/cdn-cgi/trace"
+    const val G204_URL = "https://connectivitycheck.gstatic.com/generate_204"
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
         .readTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
@@ -57,8 +61,8 @@ object DataPlane {
 
     /** Одна пара проверок (Cloudflare trace + generate_204); параллельно. */
     suspend fun validate(proxySocksPort: Int? = null): Outcome = coroutineScope {
-        val cf = async { probe("https://cloudflare.com/cdn-cgi/trace", proxySocksPort, expect = Expect.CF) }
-        val g = async { probe("https://connectivitycheck.gstatic.com/generate_204", proxySocksPort, expect = Expect.G204) }
+        val cf = async { probe(CF_TRACE_URL, proxySocksPort, expect = Expect.CF) }
+        val g = async { probe(G204_URL, proxySocksPort, expect = Expect.G204) }
         Outcome(cf.await(), g.await())
     }
 

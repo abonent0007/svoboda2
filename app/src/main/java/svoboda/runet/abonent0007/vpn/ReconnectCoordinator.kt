@@ -205,6 +205,9 @@ class ReconnectCoordinator(
 
     private suspend fun scheduleReconnect(currentSession: Long) {
         if (!intent.shouldBeConnected || intent.sessionId != currentSession) return
+        // Снимок здоровья на случай, если к моменту ветки FAILED/RECONNECT кто-то
+        // уже успел заменить health-job (не удаляем чужой/новый).
+        val expectedHealth = jobs.snapshotHealth()
         cancelReconnect()
         // Потолок backoff — последний элемент политики (60 с), а не отдельное значение.
         val baseDelay = backoffBase[failureCount.coerceAtMost(backoffBase.lastIndex)]
@@ -238,19 +241,18 @@ class ReconnectCoordinator(
                             startHealth(currentSession)
                         }
                         is ConnectionResult.NoWorkingRoute -> {
-                            // Честный терминал только для ручного/окончательного отказа.
                             // Все в quarantine — ждём истечения окна backoff'ом, а не вечным FAILED.
                             if (result.quarantine) {
                                 scheduleReconnect(currentSession)
                             } else {
-                                jobs.clearHealth()
+                                jobs.clearHealth(expectedHealth)
                                 _state.value = ReconnectState.FAILED
                                 controller.setStatus("Нет рабочего маршрута")
                             }
                         }
                         is ConnectionResult.CandidateDegraded,
                         is ConnectionResult.FailoverInProgress -> {
-                            jobs.clearHealth()
+                            jobs.clearHealth(expectedHealth)
                             _state.value = ReconnectState.FAILED
                             // Честный терминал: дальнейших попыток не планируем.
                             controller.setStatus("Нет рабочего маршрута")

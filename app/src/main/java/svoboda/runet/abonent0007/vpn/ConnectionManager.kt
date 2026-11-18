@@ -219,6 +219,10 @@ class ConnectionManager(
             controller.connect(bootstrap)
         }
 
+        // Снимок сохранённых профилей ДО генерации новых: фоллбэк не должен проверять
+        // только что созданные конфигурации дважды и вытеснять старый резерв.
+        val savedFallbackProfiles = store.list().take(MAX_FALLBACK_PROFILES)
+
         // Шаг 2. Через поднятый туннель регистрируем НОВЫЙ WARP-профиль.
         // Падение data-plane одного endpoint не завершает внутренний перебор.
         var lastResult: ConnectionResult = ConnectionResult.NoWorkingRoute(listOf("warp: generated endpoints unavailable"))
@@ -253,9 +257,8 @@ class ConnectionManager(
             }
         }
 
-        // Шаг 3. Откат к началу ранее сгенерированного списка; тоже с перебором до конца.
-        val saved = store.list().take(MAX_FALLBACK_PROFILES)
-        saved.forEachIndexed { index, profile ->
+        // Шаг 3. Откат к ранее сохранённому списку (snapshot до генерации новых); тоже с перебором до конца.
+        savedFallbackProfiles.forEachIndexed { index, profile ->
             _profileLabel.value = "Профиль WARP · №${index + 1}"
             if (!intentCheck()) {
                 return ConnectionResult.UserDisconnected
@@ -445,8 +448,6 @@ class ConnectionManager(
      *  @param bypassQuarantine true — ручная попытка "ПОВТОРИТЬ"; автоматика quarantine не обходит. */
     suspend fun autoConnect(bypassHold: Boolean = false, bypassQuarantine: Boolean = false): ConnectionResult {
         val now = System.currentTimeMillis()
-        // Пропускаем антидребезг ТОЛЬКО когда уже есть подтверждённый HEALTHY-сеанс.
-        // DEGRADED-сессия не считается healthy: ей нужен failover, а не удержание кандидата.
         val hasHealthySession = controller.phase.value == VpnPhase.CONNECTED && lastAutoSwitchAt > 0L
         val decision = AntiBounceGate.proceed(
             bypassHold = bypassHold,
@@ -554,7 +555,7 @@ class ConnectionManager(
                 return ConnectionResult.UserDisconnected
             }
             // Пользовательские/ручные попытки (bypassQuarantine=true) обходят quarantine; автоматика — нет.
-            if (!bypassQuarantine && !cycle.canTry(candidate.id, now)) {
+            if (!bypassQuarantine && !cycle.canTry(candidate.id)) {
                 logAuto("try candidate #${i + 1} ${candidate.id}: skipped (quarantine)")
                 continue
             }
@@ -592,14 +593,14 @@ class ConnectionManager(
                     return ConnectionResult.ConnectedHealthy
                 }
                 is ConnectionResult.CandidateDegraded -> {
-                    cycle.recordFailure(candidate.id, now, result.detail)
+                    cycle.recordFailure(candidate.id, result.detail)
                     logAuto("candidate ${candidate.id}: data-plane rejected -> next candidate")
                 }
                 is ConnectionResult.UserDisconnected -> {
                     return ConnectionResult.UserDisconnected
                 }
                 else -> {
-                    cycle.recordFailure(candidate.id, now, "transport fail")
+                    cycle.recordFailure(candidate.id, "transport fail")
                 }
             }
         }
@@ -610,7 +611,7 @@ class ConnectionManager(
         // Все кандидаты недоступны (внутри цикла и из-за quarantine), независимо от того,
         // что именно этим циклом проверено.
         val allQuarantined = candidates.isNotEmpty() &&
-            candidates.all { !cycle.canTry(it.id, now) }
+            candidates.all { !cycle.canTry(it.id) }
         logAuto(
             if (allQuarantined) "no working route: all candidates quarantined"
             else "no working route: candidates rejected: $reasons",

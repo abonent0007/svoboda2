@@ -79,10 +79,10 @@ colo=LAX
 
     @Test
     fun `production probe urls are well-formed`() {
-        assertEquals("/cdn-cgi/trace", "https://cloudflare.com/cdn-cgi/trace".toHttpUrlOrNull()!!.encodedPath)
-        assertEquals("https", "https://cloudflare.com/cdn-cgi/trace".toHttpUrlOrNull()!!.scheme)
-        assertEquals("/generate_204", "https://connectivitycheck.gstatic.com/generate_204".toHttpUrlOrNull()!!.encodedPath)
-        assertEquals("https", "https://connectivitycheck.gstatic.com/generate_204".toHttpUrlOrNull()!!.scheme)
+        assertEquals("/cdn-cgi/trace", DataPlane.CF_TRACE_URL.toHttpUrlOrNull()!!.encodedPath)
+        assertEquals("https", DataPlane.CF_TRACE_URL.toHttpUrlOrNull()!!.scheme)
+        assertEquals("/generate_204", DataPlane.G204_URL.toHttpUrlOrNull()!!.encodedPath)
+        assertEquals("https", DataPlane.G204_URL.toHttpUrlOrNull()!!.scheme)
     }
 
     @Test

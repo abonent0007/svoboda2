@@ -32,6 +32,7 @@ object DataPlaneVerdict {
  */
 class CandidateCycle(
     private val quarantineMs: Long = QUARANTINE_MS,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     companion object {
         const val QUARANTINE_MS = 10 * 60 * 1000L
@@ -51,16 +52,17 @@ class CandidateCycle(
     /** true, если цикл что-то пытался сделать (иначе все пропуски — в quarantine). */
     fun attemptedSomething(): Boolean = failedInCycle.isNotEmpty()
 
-    fun canTry(id: String, nowMs: Long): Boolean =
-        id !in failedInCycle && nowMs >= (quarantinedUntil[id] ?: 0L)
+    fun canTry(id: String): Boolean =
+        id !in failedInCycle && clock() >= (quarantinedUntil[id] ?: 0L)
 
     fun failures(): List<String> = failedInCycle.toList()
 
     /** Время ближайшего освобождения из quarantine; null если никто не quarantine. */
-    fun nextEligibleAt(nowMs: Long): Long? =
-        quarantinedUntil.values.filter { it > nowMs }.minOrNull()
+    fun nextEligibleAt(): Long? =
+        quarantinedUntil.values.filter { it > clock() }.minOrNull()
 
-    fun recordFailure(id: String, nowMs: Long, reason: String) {
+    fun recordFailure(id: String, reason: String) {
+        val nowMs = clock()
         failedInCycle += id
         quarantinedUntil[id] = nowMs + quarantineMs
     }

@@ -60,6 +60,28 @@ class SingleJobTrackerTest {
     }
 
     @Test
+    fun `clearHealth(expected) does not clear newer ownership`() {
+        val t = SingleJobTracker()
+        val a = kotlinx.coroutines.Job()
+        val b = kotlinx.coroutines.Job()
+        t.setHealth(a)
+        t.setHealth(b)           // B теперь владеет слотом; A отменена изнутри setHealth
+        assertFalse("foreign/completed job must not clear newer holder", t.clearHealth(a))
+        assertTrue("current owner can clear itself", t.clearHealth(b))
+        assertFalse(t.activeHealth)
+    }
+
+    @Test
+    fun `clearHealth without expected clears whatever is tracked`() {
+        val t = SingleJobTracker()
+        val a = kotlinx.coroutines.Job()
+        t.setHealth(a)
+        assertTrue(t.clearHealth())
+        assertFalse(t.activeHealth)
+        assertTrue(t.clearHealth())   // повтор — тоже true (unconditional)
+    }
+
+    @Test
     fun `parallel health replacements never leave tracker empty mid-flight`() {
         val t = SingleJobTracker()
         val workers = (1..12).map {

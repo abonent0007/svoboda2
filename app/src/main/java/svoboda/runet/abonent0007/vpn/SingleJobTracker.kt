@@ -5,7 +5,8 @@ import kotlinx.coroutines.Job
 /**
  * Единое хранилище health/reconnect-задач координатора.
  * Установка нового Job отменяет предыдущий — дублирующиеся циклы исключены.
- * Все операции синхронизированы: tracked-job всегда единственно актуален.
+ * Все операции синхронизированы. clear(expected) очищает только если сейчас
+ * отслеживается именно этот Job — чужую/новую задачу не прервём.
  */
 class SingleJobTracker {
     private var reconnectJob: Job? = null
@@ -18,10 +19,18 @@ class SingleJobTracker {
         return job
     }
 
+    /** Парная очистка reconnect-slot: убрать только tracked job (поздний/чужой no-op). */
     @Synchronized
-    fun clearReconnect() {
+    fun clearReconnect(expected: Job? = null): Boolean {
+        if (expected == null) {
+            reconnectJob?.cancel()
+            reconnectJob = null
+            return true
+        }
+        if (reconnectJob !== expected) return false
         reconnectJob?.cancel()
         reconnectJob = null
+        return true
     }
 
     @Synchronized
@@ -31,11 +40,25 @@ class SingleJobTracker {
         return job
     }
 
+    /** Парная очистка health-slot: убрать только tracked job (поздний/чужой no-op). */
     @Synchronized
-    fun clearHealth() {
+    fun clearHealth(expected: Job? = null): Boolean {
+        if (expected == null) {
+            healthJob?.cancel()
+            healthJob = null
+            return true
+        }
+        if (healthJob !== expected) return false
         healthJob?.cancel()
         healthJob = null
+        return true
     }
+
+    @Synchronized
+    fun snapshotHealth(): Job? = healthJob
+
+    @Synchronized
+    fun snapshotReconnect(): Job? = reconnectJob
 
     val activeReconnect: Boolean @Synchronized get() = reconnectJob?.isActive == true
     val activeHealth: Boolean @Synchronized get() = healthJob?.isActive == true
