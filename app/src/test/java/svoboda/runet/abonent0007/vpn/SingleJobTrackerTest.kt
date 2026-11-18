@@ -22,8 +22,8 @@ class SingleJobTrackerTest {
         t.setHealth(j2)           // предыдущий отменяется
         assertFalse("old health job must be cancelled", j1.isActive)
         assertTrue("new health job is registered", t.activeHealth)
-        t.clearHealth()
-        assertFalse("clearHealth stops current job", j2.isActive)
+        t.clearAllHealth()
+        assertFalse("clearAllHealth stops current job", j2.isActive)
         assertFalse(t.activeHealth)
     }
 
@@ -37,8 +37,8 @@ class SingleJobTrackerTest {
         t.setReconnect(j2)
         assertFalse("old reconnect job must be cancelled", j1.isActive)
         assertTrue(t.activeReconnect)
-        t.clearReconnect()
-        assertFalse("clearReconnect stops current job", j2.isActive)
+        t.clearAllReconnect()
+        assertFalse("clearAllReconnect stops current job", j2.isActive)
         assertFalse(t.activeReconnect)
     }
 
@@ -51,34 +51,59 @@ class SingleJobTrackerTest {
         t.setReconnect(j2)
         assertTrue(t.activeHealth)
         assertTrue(t.activeReconnect)
-        t.clearHealth()
+        t.clearAllHealth()
         assertTrue(t.activeReconnect)
-        t.clearReconnect()
+        t.clearAllReconnect()
         assertFalse(t.activeHealth)
         assertFalse(t.activeReconnect)
         j1.cancel(); j2.cancel()
     }
 
     @Test
-    fun `clearHealth(expected) does not clear newer ownership`() {
+    fun `clearHealthIfCurrent does not clear newer ownership`() {
         val t = SingleJobTracker()
         val a = kotlinx.coroutines.Job()
         val b = kotlinx.coroutines.Job()
         t.setHealth(a)
         t.setHealth(b)           // B теперь владеет слотом; A отменена изнутри setHealth
-        assertFalse("foreign/completed job must not clear newer holder", t.clearHealth(a))
-        assertTrue("current owner can clear itself", t.clearHealth(b))
+        assertFalse("foreign/completed job must not clear newer holder", t.clearHealthIfCurrent(a))
+        assertTrue("current owner can clear itself", t.clearHealthIfCurrent(b))
         assertFalse(t.activeHealth)
     }
 
     @Test
-    fun `clearHealth without expected clears whatever is tracked`() {
+    fun `clearAllHealth clears whatever is tracked`() {
         val t = SingleJobTracker()
         val a = kotlinx.coroutines.Job()
         t.setHealth(a)
-        assertTrue(t.clearHealth())
+        t.clearAllHealth()
         assertFalse(t.activeHealth)
-        assertTrue(t.clearHealth())   // повтор — тоже true (unconditional)
+        t.clearAllHealth()   // повтор — no-op, не падает
+    }
+
+    @Test
+    fun `clearIfCurrent does not touch job registered after snapshot`() {
+        val t = SingleJobTracker()
+        // Старая ветка делает снимок до появления нового владельца.
+        val snapshot = t.snapshotHealth()
+        assertTrue("snapshot was empty", snapshot == null)
+        val b = kotlinx.coroutines.Job()
+        t.setHealth(b)                       // новый владелец регистрируется ПОСЛЕ снимка
+        // Старая ветка пытается очистить по своему снимку (null) — ничего не трогаем.
+        snapshot?.let { t.clearHealthIfCurrent(it) }
+        assertTrue("newer job must survive stale clear", t.activeHealth)
+    }
+
+    @Test
+    fun `clearIfCurrent with old snapshot keeps newer job`() {
+        val t = SingleJobTracker()
+        val a = kotlinx.coroutines.Job()
+        t.setHealth(a)
+        val snapshot = t.snapshotHealth()      // снимок A
+        val b = kotlinx.coroutines.Job()
+        t.setHealth(b)                         // B заменил A
+        assertFalse("stale clear must not cancel successor", t.clearHealthIfCurrent(a))
+        assertTrue("newer job stays active", t.activeHealth)
     }
 
     @Test
@@ -92,7 +117,7 @@ class SingleJobTrackerTest {
         workers.forEach { it.join() }
         // Последняя установленная задача всё ещё в трекере и жива.
         assertTrue(t.activeHealth)
-        t.clearHealth()
+        t.clearAllHealth()
         assertFalse(t.activeHealth)
     }
 }

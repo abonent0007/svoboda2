@@ -19,18 +19,20 @@ class SingleJobTracker {
         return job
     }
 
-    /** Парная очистка reconnect-slot: убрать только tracked job (поздний/чужой no-op). */
+    /** Удалить reconnect-job ТОЛЬКО если прямо сейчас tracked — именно этот (иначе no-op). */
     @Synchronized
-    fun clearReconnect(expected: Job? = null): Boolean {
-        if (expected == null) {
-            reconnectJob?.cancel()
-            reconnectJob = null
-            return true
-        }
+    fun clearReconnectIfCurrent(expected: Job): Boolean {
         if (reconnectJob !== expected) return false
         reconnectJob?.cancel()
         reconnectJob = null
         return true
+    }
+
+    /** Безусловная очистка reconnect-slot — пользовательский отключение/сброс. */
+    @Synchronized
+    fun clearAllReconnect() {
+        reconnectJob?.cancel()
+        reconnectJob = null
     }
 
     @Synchronized
@@ -40,18 +42,20 @@ class SingleJobTracker {
         return job
     }
 
-    /** Парная очистка health-slot: убрать только tracked job (поздний/чужой no-op). */
+    /** Удалить health-job ТОЛЬКО если прямо сейчас tracked — именно этот (иначе no-op). */
     @Synchronized
-    fun clearHealth(expected: Job? = null): Boolean {
-        if (expected == null) {
-            healthJob?.cancel()
-            healthJob = null
-            return true
-        }
+    fun clearHealthIfCurrent(expected: Job): Boolean {
         if (healthJob !== expected) return false
         healthJob?.cancel()
         healthJob = null
         return true
+    }
+
+    /** Безусловная очистка health-slot — пользовательский отключение/сброс. */
+    @Synchronized
+    fun clearAllHealth() {
+        healthJob?.cancel()
+        healthJob = null
     }
 
     @Synchronized

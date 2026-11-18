@@ -59,7 +59,7 @@ class ReconnectCoordinator(
     suspend fun <T> withVpnLock(block: suspend () -> T): T = mutex.withLock { block() }
 
     fun cancelHealth() {
-        jobs.clearHealth()
+        jobs.clearAllHealth()
     }
 
     fun startNetworkMonitoring() {
@@ -245,14 +245,14 @@ class ReconnectCoordinator(
                             if (result.quarantine) {
                                 scheduleReconnect(currentSession)
                             } else {
-                                jobs.clearHealth(expectedHealth)
+                                expectedHealth?.let(jobs::clearHealthIfCurrent)
                                 _state.value = ReconnectState.FAILED
                                 controller.setStatus("Нет рабочего маршрута")
                             }
                         }
                         is ConnectionResult.CandidateDegraded,
                         is ConnectionResult.FailoverInProgress -> {
-                            jobs.clearHealth(expectedHealth)
+                            expectedHealth?.let(jobs::clearHealthIfCurrent)
                             _state.value = ReconnectState.FAILED
                             // Честный терминал: дальнейших попыток не планируем.
                             controller.setStatus("Нет рабочего маршрута")
@@ -276,7 +276,7 @@ class ReconnectCoordinator(
     }
 
     private fun cancelReconnect() {
-        jobs.clearReconnect()
+        jobs.clearAllReconnect()
     }
 
     private fun startHealth(currentSession: Long) {
