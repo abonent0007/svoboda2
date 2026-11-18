@@ -194,8 +194,11 @@ class ConnectionManager(
                 val config = WarpGenerator.buildConfig(identity, host, port, i1 = i1)
                 store.add(GeneratedProfile(System.currentTimeMillis(), host, port, config))
                 if (controller.connect(config)) {
-                    rememberGood(config)
-                    return validateDataPlane("warp:generated")
+                    val dp = validateDataPlane("warp:generated")
+                    if (dp is ConnectionResult.ConnectedHealthy) {
+                        rememberGood(config)
+                    }
+                    return dp
                 }
             }
         }
@@ -204,8 +207,11 @@ class ConnectionManager(
         store.list().take(MAX_FALLBACK_PROFILES).forEachIndexed { index, profile ->
             _profileLabel.value = "Профиль WARP · №${index + 1}"
             if (controller.connect(profile.config)) {
-                rememberGood(profile.config)
-                return validateDataPlane("warp:fallback-${index + 1}")
+                val dp = validateDataPlane("warp:fallback-${index + 1}")
+                if (dp is ConnectionResult.ConnectedHealthy) {
+                    rememberGood(profile.config)
+                }
+                return dp
             }
         }
 
@@ -217,8 +223,11 @@ class ConnectionManager(
             logAuto("candidate warp:seed${seed.number}: TRANSPORT_FAIL(stage=handshake)")
             return ConnectionResult.CandidateDegraded("warp:seed", FailureKind.HANDSHAKE, "bootstrap seed connect failed")
         }
-        rememberGood(seed.raw_config)
-        return validateDataPlane("warp:seed${seed.number}")
+        val dp = validateDataPlane("warp:seed${seed.number}")
+        if (dp is ConnectionResult.ConnectedHealthy) {
+            rememberGood(seed.raw_config)
+        }
+        return dp
     }
 
     /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг.
@@ -347,8 +356,9 @@ class ConnectionManager(
         _profileLabel.value = "WARP · ${profile.host}:${profile.port}"
         val ok = controller.connect(profile.config)
         if (ok) {
-            rememberGood(profile.config)
-            // Фактическая страна выхода (для фильтра NL/FI/US) — измеряем, а не гадаем.
+            // Страну измеряем для AUTO-фильтра; rememberGood() НЕ вызываем здесь:
+            // валидация data-plane происходит в цикле уже после этой функции,
+            // и мёртвый профиль не должен стать «последним удачным».
             val exit = NetProbe.fetchExit()
             if (exit != null && exit.country.isNotBlank()) {
                 store.updateCountry(profile, exit.country.uppercase(), System.currentTimeMillis())
