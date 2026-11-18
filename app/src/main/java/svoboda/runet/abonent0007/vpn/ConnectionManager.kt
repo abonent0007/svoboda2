@@ -174,7 +174,7 @@ class ConnectionManager(
     /** Ручное подключение: свой сервер, иначе новый WARP-профиль. */
     suspend fun connectManual(): ConnectionResult {
         if (prefs.connectionMethod == "AUTO") {
-            return autoConnect(force = true)
+            return autoConnect(bypassHold = true, bypassQuarantine = true)
         }
         if (prefs.connectionMethod == "DPI_DIRECT") {
             controller.currentProfileId = "dpi"
@@ -189,12 +189,15 @@ class ConnectionManager(
             controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)
             val ok = controller.connect(server.resolvedConfig)
-            markServerStatus(server, ok)
             if (!ok) {
+                markServerStatus(server, false)
                 logAuto("candidate ${server.id}: TRANSPORT_FAIL(stage=handshake, awg connect failed)")
                 return ConnectionResult.CandidateDegraded(server.id, FailureKind.HANDSHAKE, "awg connect failed")
             }
-            return validateDataPlane(server.id)
+            // Статус ставим только после подтверждения data-plane (HEALTHY).
+            val result = validateDataPlane(server.id)
+            markServerStatus(server, result is ConnectionResult.ConnectedHealthy)
+            return result
         }
         return connectWarpWithGeneration()
     }
@@ -217,6 +220,8 @@ class ConnectionManager(
         }
 
         // Шаг 2. Через поднятый туннель регистрируем НОВЫЙ WARP-профиль.
+        // Падение data-plane одного endpoint не завершает внутренний перебор.
+        var lastResult: ConnectionResult = ConnectionResult.NoWorkingRoute(listOf("warp: generated endpoints unavailable"))
         val identity = WarpGenerator.register()
         if (identity != null) {
             val endpoints = buildList {
@@ -231,25 +236,40 @@ class ConnectionManager(
                 }
                 val config = WarpGenerator.buildConfig(identity, host, port, i1 = i1)
                 store.add(GeneratedProfile(System.currentTimeMillis(), host, port, config))
+                if (!intentCheck()) {
+                    return ConnectionResult.UserDisconnected
+                }
                 if (controller.connect(config)) {
-                    val dp = validateDataPlane("warp:generated")
-                    if (dp is ConnectionResult.ConnectedHealthy) {
-                        rememberGood(config)
+                    val dp = validateDataPlane("warp:generated-$index")
+                    when (dp) {
+                        is ConnectionResult.ConnectedHealthy -> {
+                            rememberGood(config)
+                            return dp
+                        }
+                        is ConnectionResult.UserDisconnected -> return dp
+                        else -> lastResult = dp
                     }
-                    return dp
                 }
             }
         }
 
-        // Шаг 3. Откат к началу ранее сгенерированного списка.
-        store.list().take(MAX_FALLBACK_PROFILES).forEachIndexed { index, profile ->
+        // Шаг 3. Откат к началу ранее сгенерированного списка; тоже с перебором до конца.
+        val saved = store.list().take(MAX_FALLBACK_PROFILES)
+        saved.forEachIndexed { index, profile ->
             _profileLabel.value = "Профиль WARP · №${index + 1}"
+            if (!intentCheck()) {
+                return ConnectionResult.UserDisconnected
+            }
             if (controller.connect(profile.config)) {
                 val dp = validateDataPlane("warp:fallback-${index + 1}")
-                if (dp is ConnectionResult.ConnectedHealthy) {
-                    rememberGood(profile.config)
+                when (dp) {
+                    is ConnectionResult.ConnectedHealthy -> {
+                        rememberGood(profile.config)
+                        return dp
+                    }
+                    is ConnectionResult.UserDisconnected -> return dp
+                    else -> lastResult = dp
                 }
-                return dp
             }
         }
 
@@ -268,11 +288,10 @@ class ConnectionManager(
         return dp
     }
 
-    /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг.
-     *  @param force true — пропустить антидребезг (ручное ПОДКЛЮЧИТЬ/failover с деградированного маршрута). */
-    suspend fun connectLastKnown(force: Boolean = false): ConnectionResult {
+    /** Автопереподключение: без генерации, активный сервер или последний удачный конфиг. */
+    suspend fun connectLastKnown(bypassHold: Boolean = false, bypassQuarantine: Boolean = false): ConnectionResult {
         if (prefs.connectionMethod == "AUTO") {
-            return autoConnect(force = force)
+            return autoConnect(bypassHold = bypassHold, bypassQuarantine = bypassQuarantine)
         }
         if (prefs.connectionMethod == "DPI_DIRECT") {
             controller.currentProfileId = "dpi"
@@ -287,12 +306,14 @@ class ConnectionManager(
             controller.currentProfileId = server.id
             _profileLabel.value = serverLabel(server)
             val ok = controller.connect(server.resolvedConfig)
-            markServerStatus(server, ok)
             if (!ok) {
+                markServerStatus(server, false)
                 logAuto("candidate ${server.id}: TRANSPORT_FAIL(stage=handshake, awg connect failed)")
                 return ConnectionResult.CandidateDegraded(server.id, FailureKind.HANDSHAKE, "awg connect failed")
             }
-            return validateDataPlane(server.id)
+            val result = validateDataPlane(server.id)
+            markServerStatus(server, result is ConnectionResult.ConnectedHealthy)
+            return result
         }
         val config = lastGoodConfig ?: store.list().lastOrNull()?.config
             ?: SeedCatalog.defaultSeed(seeds)?.raw_config
@@ -308,7 +329,7 @@ class ConnectionManager(
     /** Переподключение с текущим конфигом (для применения настроек). */
     suspend fun reconnectLastKnown(): ConnectionResult {
         controller.disconnect()
-        return connectLastKnown(force = true)
+        return connectLastKnown(bypassHold = true, bypassQuarantine = true)
     }
 
     /** Однократное автоподключение при старте приложения (если включено). */
@@ -332,8 +353,13 @@ class ConnectionManager(
         _profileLabel.value = serverLabel(server)
         controller.disconnect()
         val ok = controller.connect(server.config)
-        markServerStatus(server, ok)
-        return ok
+        if (!ok) {
+            markServerStatus(server, false)
+            return false
+        }
+        val result = validateDataPlane(server.id)
+        markServerStatus(server, result is ConnectionResult.ConnectedHealthy)
+        return result is ConnectionResult.ConnectedHealthy
     }
 
     /** Возврат на WARP-профиль по умолчанию. */
@@ -414,14 +440,16 @@ class ConnectionManager(
     /** Кросс-цикловый учёт отказавших кандидатов (C1): quarantine живёт между автоподключениями. */
     private val cycle = CandidateCycle()
 
-    /** AUTO: перебор кандидатов с обязательной проверкой data-plane (P0, 2026-11-18). */
-    suspend fun autoConnect(force: Boolean = false): ConnectionResult {
+    /** AUTO: перебор кандидатов с обязательной проверкой data-plane (P0, 2026-11-18).
+     *  @param bypassHold true — обход антидребезга (ручное ПОДКЛЮЧИТЬ / failover с деградированного маршрута).
+     *  @param bypassQuarantine true — ручная попытка "ПОВТОРИТЬ"; автоматика quarantine не обходит. */
+    suspend fun autoConnect(bypassHold: Boolean = false, bypassQuarantine: Boolean = false): ConnectionResult {
         val now = System.currentTimeMillis()
         // Пропускаем антидребезг ТОЛЬКО когда уже есть подтверждённый HEALTHY-сеанс.
         // DEGRADED-сессия не считается healthy: ей нужен failover, а не удержание кандидата.
         val hasHealthySession = controller.phase.value == VpnPhase.CONNECTED && lastAutoSwitchAt > 0L
         val decision = AntiBounceGate.proceed(
-            bypassHold = force,
+            bypassHold = bypassHold,
             hasHealthySession = hasHealthySession,
             lastSwitchAt = lastAutoSwitchAt,
             nowMs = now,
@@ -525,8 +553,8 @@ class ConnectionManager(
                 logAuto("cycle aborted: user disconnected")
                 return ConnectionResult.UserDisconnected
             }
-            // Пользовательские/ручные попытки (force=true) обходят quarantine — он подавляет только автоматический выбор.
-            if (!force && !cycle.canTry(candidate.id, now)) {
+            // Пользовательские/ручные попытки (bypassQuarantine=true) обходят quarantine; автоматика — нет.
+            if (!bypassQuarantine && !cycle.canTry(candidate.id, now)) {
                 logAuto("try candidate #${i + 1} ${candidate.id}: skipped (quarantine)")
                 continue
             }
@@ -579,7 +607,10 @@ class ConnectionManager(
             autoStatus = "Telegram DC недоступны: подключён DPI (AWG/WARP не найден)"
         }
         val reasons = cycle.failures()
-        val allQuarantined = reasons.isEmpty() && candidates.isNotEmpty()
+        // Все кандидаты недоступны (внутри цикла и из-за quarantine), независимо от того,
+        // что именно этим циклом проверено.
+        val allQuarantined = candidates.isNotEmpty() &&
+            candidates.all { !cycle.canTry(it.id, now) }
         logAuto(
             if (allQuarantined) "no working route: all candidates quarantined"
             else "no working route: candidates rejected: $reasons",

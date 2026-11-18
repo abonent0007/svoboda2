@@ -36,7 +36,7 @@ class ReconnectCoordinator(
     private val prefs: Prefs,
     private val scope: CoroutineScope,
     private val manualConnect: suspend () -> ConnectionResult,
-    private val autoConnect: suspend (Boolean) -> ConnectionResult,
+    private val autoConnect: suspend (Boolean, Boolean) -> ConnectionResult,
     private val disconnectAction: () -> Unit,
 ) {
     private val mutex = Mutex()
@@ -145,7 +145,7 @@ class ReconnectCoordinator(
         // Новая попытка — убираем устаревший обратный отсчёт прошлой ошибки.
         controller.setStatus(null)
         val result = try {
-            if (manual) manualConnect() else autoConnect(false)
+            if (manual) manualConnect() else autoConnect(false, false)
         } catch (ce: kotlinx.coroutines.CancellationException) {
             // Управляющее событие: отмена — не сетевая ошибка и не повод перетирать статус.
             throw ce
@@ -221,8 +221,9 @@ class ReconnectCoordinator(
                 mutex.withLock {
                     if (intent.sessionId != currentSession) return@withLock
                     val result = try {
-                        // Failover от доказанно нерабочего маршрута: антидребезг не применяется.
-                        autoConnect(true)
+                        // Failover от доказанно нерабочего маршрута: антидребезг не применяется,
+                        // но quarantine — применяется (автоматика не долбит провалившиеся endpoint).
+                        autoConnect(true, false)
                     } catch (ce: kotlinx.coroutines.CancellationException) {
                         throw ce
                     } catch (t: Throwable) {

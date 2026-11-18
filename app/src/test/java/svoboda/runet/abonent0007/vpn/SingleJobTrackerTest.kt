@@ -58,4 +58,19 @@ class SingleJobTrackerTest {
         assertFalse(t.activeReconnect)
         j1.cancel(); j2.cancel()
     }
+
+    @Test
+    fun `parallel health replacements never leave tracker empty mid-flight`() {
+        val t = SingleJobTracker()
+        val workers = (1..12).map {
+            Thread {
+                repeat(30) { t.setHealth(kotlinx.coroutines.Job()) }
+            }.apply { start() }
+        }
+        workers.forEach { it.join() }
+        // Последняя установленная задача всё ещё в трекере и жива.
+        assertTrue(t.activeHealth)
+        t.clearHealth()
+        assertFalse(t.activeHealth)
+    }
 }

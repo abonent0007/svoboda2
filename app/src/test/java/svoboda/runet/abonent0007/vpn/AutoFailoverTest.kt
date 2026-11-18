@@ -139,6 +139,50 @@ class AutoFailoverTest {
         assertTrue(c.canTry("warp:generated", t + CandidateCycle.QUARANTINE_MS))
     }
 
+    @Test
+    fun `nextEligibleAt returns earliest quarantine expiry`() {
+        val c = CandidateCycle()
+        c.beginCycle()
+        val t0 = 1_000L
+        c.recordFailure("a", t0, "x")
+        c.recordFailure("b", t0 + 100, "x")
+        assertEquals(t0 + CandidateCycle.QUARANTINE_MS, c.nextEligibleAt(t0))
+        // b ещё в quarantine до истечения своего окна (a уже отпустил)
+        assertEquals(t0 + 100 + CandidateCycle.QUARANTINE_MS, c.nextEligibleAt(t0 + CandidateCycle.QUARANTINE_MS + 1))
+        // После истечения обоих окон — никого нет.
+        assertEquals(null, c.nextEligibleAt(t0 + 100 + CandidateCycle.QUARANTINE_MS + 1))
+    }
+
+    @Test
+    fun `all quarantine formula covers mixed previously-quarantined and freshly-failed`() {
+        val c = CandidateCycle()
+        // Ранний отказ одного кандидата.
+        c.beginCycle()
+        val tEarly = 1_000L
+        c.recordFailure("public:any_1", tEarly, "data-plane")
+        // Новый цикл: два других проваливались сейчас.
+        c.beginCycle()
+        val tNow = tEarly + 1000
+        c.recordFailure("dpi", tNow, "data-plane")
+        c.recordFailure("public:fi_1", tNow, "transport")
+        // Все три недоступны, хотя причины непусты (failures — только текущий цикл).
+        val candidates = listOf("public:any_1", "dpi", "public:fi_1")
+        assertTrue("every candidate must be unavailable", candidates.all { !c.canTry(it, tNow) })
+        assertEquals(2, c.failures().size)
+    }
+
+    @Test
+    fun `failover bypasses hold but not quarantine — matrix is honoured by AntiBounceGate`() {
+        val gate = AntiBounceGate.proceed(
+            bypassHold = true,
+            hasHealthySession = true,
+            lastSwitchAt = 100_000L,
+            nowMs = 100_100L,
+            holdMinutes = 5,
+        )
+        assertEquals(Proceed.BypassHold, gate)
+    }
+
     // ---------- AntiBounceGate: разделение защиты рабочих и failover ----------
 
     @Test

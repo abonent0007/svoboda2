@@ -62,7 +62,7 @@ class SvobodaApp : Application() {
             prefs = AppGraph.prefs,
             scope = AppGraph.appScope,
             manualConnect = { AppGraph.manager.connectManual() },
-            autoConnect = { force -> AppGraph.manager.connectLastKnown(force) },
+            autoConnect = { bypassHold, bypassQuarantine -> AppGraph.manager.connectLastKnown(bypassHold, bypassQuarantine) },
             disconnectAction = { AppGraph.vpn.disconnect() },
         )
         // Предикат «user intent активен» для ConnectionManager: обрывай цикл кандидатов при ОТКЛЮЧИТЬ.

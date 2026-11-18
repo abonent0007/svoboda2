@@ -56,6 +56,10 @@ class CandidateCycle(
 
     fun failures(): List<String> = failedInCycle.toList()
 
+    /** Время ближайшего освобождения из quarantine; null если никто не quarantine. */
+    fun nextEligibleAt(nowMs: Long): Long? =
+        quarantinedUntil.values.filter { it > nowMs }.minOrNull()
+
     fun recordFailure(id: String, nowMs: Long, reason: String) {
         failedInCycle += id
         quarantinedUntil[id] = nowMs + quarantineMs
