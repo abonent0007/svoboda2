@@ -84,23 +84,30 @@ class ConnectionManager(
      * DPI — через локальный SOCKS5 (ciadpi). Одна контрольная попытка при двойном провале.
      */
     private suspend fun validateDataPlane(candidateId: String): ConnectionResult {
-        // Для DPI единственный честный data-plane — SOCKS5 (ciadpi). Если порт ещё не
-        // выставлен движком, берём сконфигурированный.
-        val socksPort = controller.dpiProbePort
-            ?: prefs.dpiSocksPort.takeIf { candidateId == "dpi" || controller.currentProfileId == "dpi" }
+        // Для DPI единственный честный data-plane — SOCKS5 (ciadpi).
+        val isDpiTarget = candidateId == "dpi" || controller.currentProfileId == "dpi"
+        val socksPort = if (isDpiTarget) {
+            controller.dpiProbePort ?: prefs.dpiSocksPort
+        } else {
+            null
+        }
         if (socksPort != null) {
             return socksDataPlaneResult(candidateId, socksPort)
         }
         var outcome = DataPlane.validate()
-        if (!DataPlane.isUsable(outcome)) {
+        var verdict = DataPlaneVerdict.evaluate(outcome.cf.ok, outcome.g.ok, isRetry = false)
+        if (verdict == Verdict.NeedsRetry) {
             logAuto("candidate $candidateId: data-plane first probe failed, control retry")
             kotlinx.coroutines.delay(2500)
+            if (!intentCheck()) {
+                return ConnectionResult.UserDisconnected
+            }
             outcome = DataPlane.validate()
+            verdict = DataPlaneVerdict.evaluate(outcome.cf.ok, outcome.g.ok, isRetry = true)
         }
-        return when {
-            DataPlane.isUsable(outcome) -> {
-                val partial = !(outcome.cf.ok && outcome.g.ok)
-                if (partial) {
+        return when (verdict) {
+            Verdict.Healthy, Verdict.HealthyPartial -> {
+                if (verdict == Verdict.HealthyPartial) {
                     logAuto("candidate $candidateId: data-plane ok (partial: ${if (outcome.cf.ok) "cloudflare" else "gstatic"})")
                 } else {
                     logAuto("candidate $candidateId: data-plane ok")
@@ -111,6 +118,10 @@ class ConnectionManager(
                 val kind = DataPlane.classify(outcome)
                 val detail = classifyFailure(kind, outcome.cf.httpCode ?: outcome.g.httpCode, outcome.cf.detail + " | " + outcome.g.detail)
                 logAuto("candidate $candidateId: CANDIDATE_DEGRADED ($detail)")
+                if (!intentCheck()) {
+                    // Отмена/отключение между пробами — не «деградация кандидата».
+                    return ConnectionResult.UserDisconnected
+                }
                 runCatching { controller.disconnect() }
                 ConnectionResult.CandidateDegraded(candidateId, kind, detail)
             }
@@ -118,14 +129,37 @@ class ConnectionManager(
     }
 
     private suspend fun socksDataPlaneResult(candidateId: String, port: Int): ConnectionResult {
-        val exit = NetProbe.fetchExitViaSocks(port)
+        var exit = NetProbe.fetchExitViaSocks(port)
+        if (exit == null) {
+            logAuto("candidate $candidateId: socks data-plane failed, control retry")
+            kotlinx.coroutines.delay(2500)
+            if (!intentCheck()) {
+                return ConnectionResult.UserDisconnected
+            }
+            exit = NetProbe.fetchExitViaSocks(port)
+        }
         return if (exit != null) {
             logAuto("candidate $candidateId: data-plane ok (socks)")
             ConnectionResult.ConnectedHealthy
         } else {
             logAuto("candidate $candidateId: CANDIDATE_DEGRADED (stage=socks)")
+            if (!intentCheck()) {
+                return ConnectionResult.UserDisconnected
+            }
+            runCatching { AppGraph.dpi.stopProcess() }   // H1: по здоровью ciadpi engine тоже должен умереть
             ConnectionResult.CandidateDegraded(candidateId, FailureKind.UNKNOWN, "socks probe failed on 127.0.0.1:$port")
         }
+    }
+
+    /** Единый путь попытки для AUTO-кандидатов: label + connect + data-plane, без двойной валидации. */
+    private suspend fun attempt(id: String, label: String, doConnect: suspend () -> Boolean): ConnectionResult {
+        _profileLabel.value = label
+        val ok = doConnect()
+        if (!ok) {
+            logAuto("candidate $id: TRANSPORT_FAIL(stage=transport)")
+            return ConnectionResult.CandidateDegraded(id, FailureKind.UNKNOWN, "transport fail")
+        }
+        return validateDataPlane(id)
     }
 
     private fun markServerStatus(server: OwnServer, ok: Boolean) {
@@ -285,7 +319,7 @@ class ConnectionManager(
         _profileLabel.value = activeServer()?.let { serverLabel(it) }
             ?: prefs.lastGoodLabel.ifBlank { defaultLabel() }
         val ok = connectLastKnown()
-        if (ok is ConnectionResult.ConnectedHealthy && activeServer() == null) {
+        if (ok is ConnectionResult.ConnectedHealthy && activeServer() == null && !lastGoodConfig.isNullOrBlank()) {
             prefs.lastGoodConfig = lastGoodConfig.orEmpty()
             return true
         }
@@ -371,15 +405,21 @@ class ConnectionManager(
         return ok
     }
 
-    private data class AutoCandidate(val id: String, val run: suspend () -> Boolean)
+    private data class AutoCandidate(
+        val id: String,
+        val attempt: suspend () -> ConnectionResult,
+        val onHealthy: (() -> Unit)? = null,
+    )
+
+    /** Кросс-цикловый учёт отказавших кандидатов (C1): quarantine живёт между автоподключениями. */
+    private val cycle = CandidateCycle()
 
     /** AUTO: перебор кандидатов с обязательной проверкой data-plane (P0, 2026-11-18). */
     suspend fun autoConnect(force: Boolean = false): ConnectionResult {
         val now = System.currentTimeMillis()
         val hasHealthySession = controller.isConnected && lastAutoSwitchAt > 0L
         val decision = AntiBounceGate.proceed(
-            isManualConnect = force,
-            candidateDegraded = false,
+            bypassHold = force,
             hasHealthySession = hasHealthySession,
             lastSwitchAt = lastAutoSwitchAt,
             nowMs = now,
@@ -404,26 +444,32 @@ class ConnectionManager(
                     logAuto("AWG: own servers=${servers.size}")
                     countries.forEach { cc ->
                         servers.filter { it.countryCode.trim().uppercase() == cc }.forEach { srv ->
-                            candidates += AutoCandidate("awg:${srv.id}") {
-                                controller.currentProfileId = srv.id
-                                _profileLabel.value = "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)"
-                                controller.connect(srv.resolvedConfig)
-                            }
+                            candidates += AutoCandidate("awg:${srv.id}", {
+                                attempt("awg:${srv.id}", "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)") {
+                                    controller.currentProfileId = srv.id
+                                    controller.connect(srv.resolvedConfig)
+                                }
+                            })
                         }
                     }
                     servers.forEach { srv ->
-                        candidates += AutoCandidate("awg:${srv.id}") {
-                            controller.currentProfileId = srv.id
-                            _profileLabel.value = "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)"
-                            controller.connect(srv.resolvedConfig)
-                        }
+                        candidates += AutoCandidate("awg:${srv.id}", {
+                            attempt("awg:${srv.id}", "AUTO · ${srv.countryName.ifBlank { srv.countryCode }} (AWG)") {
+                                controller.currentProfileId = srv.id
+                                controller.connect(srv.resolvedConfig)
+                            }
+                        })
                     }
                 }
                 "WARP" -> {
                     val profiles = store.list()
                     countries.forEach { cc ->
                         profiles.filter { it.observedCountry.trim().uppercase() == cc }.forEach { prof ->
-                            candidates += AutoCandidate("warp:${prof.host}:${prof.port}") { connectGeneratedProfile(prof) }
+                            candidates += AutoCandidate(
+                                "warp:${prof.host}:${prof.port}",
+                                { attempt("warp:${prof.host}:${prof.port}", "WARP · ${prof.host}:${prof.port}") { connectGeneratedProfile(prof) } },
+                                onHealthy = { rememberGood(prof.config) },
+                            )
                         }
                     }
                     // Встроенные публичные NL/FI/US: приоритет — по измеренной стране
@@ -443,19 +489,22 @@ class ConnectionManager(
                         allowed.sortedBy { pub ->
                             priorityIndex((measured[pub.id] ?: "").substringBefore('@').uppercase())
                         }.forEach { pub ->
-                            candidates += AutoCandidate("public:${pub.id}") { connectPublicServer(pub.id) }
+                            candidates += AutoCandidate("public:${pub.id}", {
+                                attempt("public:${pub.id}", "${pub.title} (публичный)") { connectPublicServer(pub.id) }
+                            })
                         }
                         if (allowed.isEmpty()) logAuto("публичные: согласия нет или страна не свежая (>7 дней)")
                     }
-                    candidates += AutoCandidate("warp:generated") { connectWarpWithGeneration() is ConnectionResult.ConnectedHealthy }
+                    candidates += AutoCandidate("warp:generated", { connectWarpWithGeneration() })
                 }
                 "DPI" -> {
-                    candidates += AutoCandidate("dpi") {
+                    candidates += AutoCandidate("dpi", {
                         logAuto("DPI candidate")
-                        controller.currentProfileId = "dpi"
-                        _profileLabel.value = "AUTO · DPI"
-                        AppGraph.dpi.start()
-                    }
+                        attempt("dpi", "AUTO · DPI") {
+                            controller.currentProfileId = "dpi"
+                            AppGraph.dpi.start()
+                        }
+                    })
                 }
             }
         }
@@ -466,7 +515,6 @@ class ConnectionManager(
             return ConnectionResult.NoWorkingRoute(listOf("strict: no candidates of requested countries"))
         }
 
-        val cycle = CandidateCycle()
         cycle.beginCycle()
         var dpiFallback = false
         for ((i, candidate) in candidates.withIndex()) {
@@ -475,64 +523,69 @@ class ConnectionManager(
                 logAuto("cycle aborted: user disconnected")
                 return ConnectionResult.UserDisconnected
             }
-            if (!cycle.canTry(candidate.id, now)) {
+            // Пользовательские/ручные попытки (force=true) обходят quarantine — он подавляет только автоматический выбор.
+            if (!force && !cycle.canTry(candidate.id, now)) {
                 logAuto("try candidate #${i + 1} ${candidate.id}: skipped (quarantine)")
                 continue
             }
             logAuto("try candidate #${i + 1} ${candidate.id}")
-            val transportOk = candidate.run()
-            if (!transportOk) {
-                logAuto("candidate ${candidate.id}: TRANSPORT_FAIL(stage=transport)")
-                cycle.recordFailure(candidate.id, now, "transport fail")
-                continue
-            }
-            if (!intentCheck()) {
-                logAuto("cycle aborted post-connect: user disconnected")
-                runCatching { controller.disconnect() }
-                return ConnectionResult.UserDisconnected
-            }
-            val dp = validateDataPlane(candidate.id)
-            if (dp !is ConnectionResult.ConnectedHealthy) {
-                val detail = (dp as? ConnectionResult.CandidateDegraded)?.detail ?: "data-plane failed"
-                cycle.recordFailure(candidate.id, now, detail)
-                logAuto("candidate ${candidate.id}: data-plane rejected -> next candidate")
-                continue
-            }
-            logAuto("candidate #${i + 1} selected: ${controller.currentProfileId}")
-            val isDpi = controller.currentProfileId == "dpi"
-            if (isDpi && prefs.autoTelegramViaVpn) {
-                // Telegram-приложение ходит к IP-адресам DC: DPI-стратегии их не открывают.
-                // Если DC недоступны — ищем транспорт AWG/WARP, и только потом откатываемся на DPI.
-                val dc = TelegramDc.check(viaSocks = true, socksPort = prefs.dpiSocksPort)
-                if (!dc.reachable) {
-                    logAuto("Telegram DC over DPI down (${dc.error ?: "no answer"}) -> AWG/WARP")
-                    autoStatus = "Telegram DC недоступны через DPI (${dc.error ?: "нет ответа"}) — ищем AWG/WARP"
-                    if (!dpiFallback) {
-                        dpiFallback = true
-                        cycle.recordFailure(candidate.id, now, "telegram-dc-down")
-                        runCatching { controller.disconnect() }
-                        continue
+            when (val result = candidate.attempt()) {
+                is ConnectionResult.ConnectedHealthy -> {
+                    candidate.onHealthy?.invoke()
+                    logAuto("candidate #${i + 1} selected: ${controller.currentProfileId}")
+                    val isDpi = controller.currentProfileId == "dpi"
+                    if (isDpi && prefs.autoTelegramViaVpn) {
+                        // Telegram-приложение ходит к IP-адресам DC: DPI-стратегии их не открывают.
+                        // Если DC недоступны — ищем транспорт AWG/WARP, и только потом откатываемся на DPI.
+                        val dc = TelegramDc.check(viaSocks = true, socksPort = prefs.dpiSocksPort)
+                        if (!dc.reachable) {
+                            logAuto("Telegram DC over DPI down (${dc.error ?: "no answer"}) -> AWG/WARP")
+                            autoStatus = "Telegram DC недоступны через DPI (${dc.error ?: "нет ответа"}) — ищем AWG/WARP"
+                            if (!dpiFallback) {
+                                dpiFallback = true
+                                // НЕ quarantine: DC-флап — не причина банить DPI на 10 минут.
+                                runCatching { controller.disconnect() }
+                                continue
+                            }
+                        } else {
+                            logAuto("Telegram DC reachable")
+                            autoStatus = "Telegram DC доступны"
+                        }
                     }
-                } else {
-                    logAuto("Telegram DC reachable")
-                    autoStatus = "Telegram DC доступны"
+                    if (!intentCheck()) {
+                        logAuto("cycle aborted post-validation: user disconnected")
+                        runCatching { controller.disconnect() }
+                        return ConnectionResult.UserDisconnected
+                    }
+                    lastAutoSwitchAt = System.currentTimeMillis()
+                    logAuto("done: profile=${controller.currentProfileId}")
+                    return ConnectionResult.ConnectedHealthy
+                }
+                is ConnectionResult.CandidateDegraded -> {
+                    cycle.recordFailure(candidate.id, now, result.detail)
+                    logAuto("candidate ${candidate.id}: data-plane rejected -> next candidate")
+                }
+                is ConnectionResult.UserDisconnected -> {
+                    return ConnectionResult.UserDisconnected
+                }
+                else -> {
+                    cycle.recordFailure(candidate.id, now, "transport fail")
                 }
             }
-            if (!intentCheck()) {
-                logAuto("cycle aborted post-validation: user disconnected")
-                runCatching { controller.disconnect() }
-                return ConnectionResult.UserDisconnected
-            }
-            lastAutoSwitchAt = System.currentTimeMillis()
-            logAuto("done: profile=${controller.currentProfileId}")
-            return ConnectionResult.ConnectedHealthy
         }
         if (dpiFallback) {
             autoStatus = "Telegram DC недоступны: подключён DPI (AWG/WARP не найден)"
         }
         val reasons = cycle.failures()
-        logAuto("no working route: candidates rejected: $reasons")
-        return ConnectionResult.NoWorkingRoute(reasons)
+        val allQuarantined = reasons.isEmpty() && candidates.isNotEmpty()
+        logAuto(
+            if (allQuarantined) "no working route: all candidates quarantined"
+            else "no working route: candidates rejected: $reasons",
+        )
+        return ConnectionResult.NoWorkingRoute(
+            if (allQuarantined) listOf("all candidates quarantined") else reasons,
+            quarantine = allQuarantined,
+        )
     }
 
     /** Статус AUTO для UI (последняя причина выбора/отказа). */

@@ -26,8 +26,9 @@ sealed interface ConnectionResult {
     /** Идёт переход к следующему кандидату. */
     data object FailoverInProgress : ConnectionResult
 
-    /** Кандидаты исчерпаны: честный конечный результат, НЕ «подключено». */
-    data class NoWorkingRoute(val reasons: List<String>) : ConnectionResult
+    /** Кандидаты исчерпаны: честный конечный результат, НЕ «подключено».
+     * @param quarantine true, если ничего не перебиралось, т.к. все кандидаты в quarantine. */
+    data class NoWorkingRoute(val reasons: List<String>, val quarantine: Boolean = false) : ConnectionResult
 
     /** Отключено пользователем — автоматического подключения больше нет до нового действия. */
     data object UserDisconnected : ConnectionResult

@@ -144,34 +144,31 @@ class AutoFailoverTest {
     @Test
     fun `manual connect always proceeds`() {
         val gate = AntiBounceGate.proceed(
-            isManualConnect = true,
-            candidateDegraded = false,
+            bypassHold = true,
             hasHealthySession = true,
             lastSwitchAt = 0L,
             nowMs = 0L,
             holdMinutes = 5,
         )
-        assertEquals(Proceed.ProceedNow, gate)
+        assertEquals(Proceed.BypassHold, gate)
     }
 
     @Test
-    fun `failover never blocked by anti-bounce`() {
+    fun `bypass hold bypasses even very recent healthy switch`() {
         val gate = AntiBounceGate.proceed(
-            isManualConnect = false,
-            candidateDegraded = true,
+            bypassHold = true,
             hasHealthySession = true,
             lastSwitchAt = 100_000L,
             nowMs = 100_100L,
             holdMinutes = 5,
         )
-        assertEquals(Proceed.FailoverNow, gate)
+        assertEquals(Proceed.BypassHold, gate)
     }
 
     @Test
     fun `healthy switch suppressed inside hold window`() {
         val gate = AntiBounceGate.proceed(
-            isManualConnect = false,
-            candidateDegraded = false,
+            bypassHold = false,
             hasHealthySession = true,
             lastSwitchAt = 0L,
             nowMs = 60_000L,       // 1 минута < 5 мин
@@ -183,8 +180,7 @@ class AutoFailoverTest {
     @Test
     fun `healthy switch allowed after hold window`() {
         val gate = AntiBounceGate.proceed(
-            isManualConnect = false,
-            candidateDegraded = false,
+            bypassHold = false,
             hasHealthySession = true,
             lastSwitchAt = 0L,
             nowMs = 5 * 60_000L + 1,
@@ -196,8 +192,7 @@ class AutoFailoverTest {
     @Test
     fun `no healthy session yet proceeds immediately`() {
         val gate = AntiBounceGate.proceed(
-            isManualConnect = false,
-            candidateDegraded = false,
+            bypassHold = false,
             hasHealthySession = false,
             lastSwitchAt = 0L,
             nowMs = 0L,

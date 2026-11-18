@@ -25,13 +25,6 @@ object DataPlaneVerdict {
     }
 }
 
-data class CandidateOutcome(
-    val id: String,
-    val ok: Boolean,
-    val kind: FailureKind? = null,
-    val detail: String = "",
-)
-
 /**
  * Учёт кандидатов внутри одного цикла перебора и временный quarantine между циклами:
  * провалившийся кандидат не выбирается до конца цикла и не раньше QUARANTINE_MS.
@@ -55,24 +48,17 @@ class CandidateCycle(
         return cycleId
     }
 
-    fun currentCycleId(): Int = cycleId
+    /** true, если цикл что-то пытался сделать (иначе все пропуски — в quarantine). */
+    fun attemptedSomething(): Boolean = failedInCycle.isNotEmpty()
 
     fun canTry(id: String, nowMs: Long): Boolean =
         id !in failedInCycle && nowMs >= (quarantinedUntil[id] ?: 0L)
-
-    fun attemptCount(): Int = failedInCycle.size
 
     fun failures(): List<String> = failedInCycle.toList()
 
     fun recordFailure(id: String, nowMs: Long, reason: String) {
         failedInCycle += id
         quarantinedUntil[id] = nowMs + quarantineMs
-    }
-
-    fun resetForSession() {
-        failedInCycle.clear()
-        quarantinedUntil.clear()
-        cycleId = 0
     }
 }
 
@@ -91,29 +77,26 @@ fun classifyFailure(kind: FailureKind?, httpCode: Int?, message: String): String
     return if (msg.isBlank()) "$base$code" else "$base$code, $msg"
 }
 
-enum class Proceed { ProceedNow, Deferred, FailoverNow }
+enum class Proceed { ProceedNow, Deferred, BypassHold }
 
 /**
  * Разделение двух разных вопросов:
  *  - "подавляем ли переход между рабочими кандидатами" (anti-bounce);
- *  - "разрешаем ли переход с доказанно нерабочего кандидата" (failover, всегда разрешён).
+ *  - "разрешаем ли переход с доказанно нерабочего маршрута" — всегда разрешён (bypassHold).
  */
 object AntiBounceGate {
     /**
-     * @param isManualConnect ручной ПОДКЛЮЧИТЬ — антидребезг не применяется.
-     * @param candidateDegraded текущий кандидат признан нерабочим (data-plane) — failover всегда.
+     * @param bypassHold true — обход антидребезга (ручное ПОДКЛЮЧИТЬ / failover с деградированного маршрута).
      * @param hasHealthySession была ли уже устойчивая сессия (если нет — попытка идёт всегда).
      */
     fun proceed(
-        isManualConnect: Boolean,
-        candidateDegraded: Boolean,
+        bypassHold: Boolean,
         hasHealthySession: Boolean,
         lastSwitchAt: Long,
         nowMs: Long,
         holdMinutes: Int,
     ): Proceed {
-        if (isManualConnect) return Proceed.ProceedNow
-        if (candidateDegraded) return Proceed.FailoverNow
+        if (bypassHold) return Proceed.BypassHold
         if (!hasHealthySession) return Proceed.ProceedNow
         if (holdMinutes <= 0) return Proceed.ProceedNow
         val holdMs = holdMinutes * 60_000L

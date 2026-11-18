@@ -67,7 +67,7 @@ object DataPlane {
     private suspend fun probe(url: String, socksPort: Int?, expect: Expect): EndpointProbe =
         withContext(Dispatchers.IO) {
             val c = socksPort?.let { socksClient(it) } ?: client
-            runCatching {
+            try {
                 val req = Request.Builder().url(url).header("User-Agent", "Svoboda2-Android").build()
                 c.newCall(req).execute().use { resp ->
                     val code = resp.code
@@ -90,7 +90,9 @@ object DataPlane {
                         }
                     }
                 }
-            }.getOrElse { e ->
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce          // отмена — управляющее событие, не probe-failure
+            } catch (e: Exception) {
                 EndpointProbe.fail(classifyException(e), exceptionDetail(e))
             }
         }

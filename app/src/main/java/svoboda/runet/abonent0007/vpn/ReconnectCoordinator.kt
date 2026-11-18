@@ -162,7 +162,13 @@ class ReconnectCoordinator(
                 startHealth(currentSession)
             }
             is ConnectionResult.ReconnectDeferred -> {
-                // Отложенная попытка — НЕ показатель подключения: ничего не меняем.
+                // Отложенная попытка — НЕ показатель подключения.
+                // По смыслу ветки туннель уже здоров; оставляем как есть, но если
+                // экран завис на CONNECTING без prior state — показываем здоровое состояние.
+                if (_state.value == ReconnectState.CONNECTING && controller.isConnected) {
+                    _state.value = ReconnectState.CONNECTED
+                    controller.setStatus(null)
+                }
                 return@withLock
             }
             is ConnectionResult.TransportUpValidating -> {
@@ -229,9 +235,20 @@ class ReconnectCoordinator(
                             controller.setStatus(null)
                             startHealth(currentSession)
                         }
-                        is ConnectionResult.NoWorkingRoute,
+                        is ConnectionResult.NoWorkingRoute -> {
+                            // Честный терминал только для ручного/окончательного отказа.
+                            // Все в quarantine — ждём истечения окна backoff'ом, а не вечным FAILED.
+                            if (result.quarantine) {
+                                scheduleReconnect(currentSession)
+                            } else {
+                                jobs.clearHealth()
+                                _state.value = ReconnectState.FAILED
+                                controller.setStatus("Нет рабочего маршрута")
+                            }
+                        }
                         is ConnectionResult.CandidateDegraded,
                         is ConnectionResult.FailoverInProgress -> {
+                            jobs.clearHealth()
                             _state.value = ReconnectState.FAILED
                             // Честный терминал: дальнейших попыток не планируем.
                             controller.setStatus("Нет рабочего маршрута")
