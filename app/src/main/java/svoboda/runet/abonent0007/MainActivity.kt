@@ -13,12 +13,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import svoboda.runet.abonent0007.net.NetProbe
 import svoboda.runet.abonent0007.net.Updater
 import svoboda.runet.abonent0007.own.OwnServer
 import svoboda.runet.abonent0007.ui.home.HomeScreen
+import svoboda.runet.abonent0007.ui.method.YouTubeStrategyDialog
 import svoboda.runet.abonent0007.ui.own.AddServerDialog
 import svoboda.runet.abonent0007.ui.own.ServerListDialog
 import svoboda.runet.abonent0007.ui.split.AppPickerDialog
@@ -51,6 +60,8 @@ class MainActivity : ComponentActivity() {
             var showServers by remember { mutableStateOf(false) }
             var showAddServer by remember { mutableStateOf(false) }
             var updateMessage by remember { mutableStateOf<String?>(null) }
+            var showYtPrompt by remember { mutableStateOf(true) }
+            var showYtPicker by remember { mutableStateOf(false) }
 
             fun doConnect(scope: CoroutineScope) {
                 // Выбранный на главном экране способ подключения:
@@ -154,6 +165,35 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                 )
+
+                if (showYtPrompt) {
+                    AlertDialog(
+                        onDismissRequest = { showYtPrompt = false },
+                        title = { Text("Улучшить работу YouTube?") },
+                        text = {
+                            Text(
+                                "Подбор стратегии DPI под YouTube / Google-видео: перебор ~43 стратегий, " +
+                                    "обычно до нескольких минут. Если DPI сейчас подключён, подбор лучше запустить " +
+                                    "после отключения. Это можно сделать и позже: Настройки → DPI → " +
+                                    "«Подобрать стратегию для YouTube».",
+                                color = androidx.compose.ui.graphics.Color(0xFF9FB0C2),
+                                fontSize = 12.sp,
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showYtPrompt = false
+                                showYtPicker = true
+                            }) { Text("ПОДОБРАТЬ") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showYtPrompt = false }) { Text("ПОЗЖЕ") }
+                        },
+                    )
+                }
+                if (showYtPicker) {
+                    YouTubeStrategyDialog(onDismiss = { showYtPicker = false })
+                }
 
                 if (showServers) {
                     ServerListDialog(

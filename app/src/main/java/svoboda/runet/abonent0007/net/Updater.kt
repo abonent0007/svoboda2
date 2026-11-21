@@ -83,16 +83,24 @@ object Updater {
             // Сравниваем версии численно: v2.0.10 новее v2.0.9; откат не предлагаем.
             if (tag.isBlank() || !isNewer(tag, BuildConfig.VERSION_NAME)) return@runCatching null
             val assets = json.optJSONArray("assets") ?: return@runCatching null
+            // Выбираем APK: 1) universal, 2) под основной ABI устройства, 3) любой первый.
+            val abis = android.os.Build.SUPPORTED_ABIS
+            val primaryAbi = abis.firstOrNull().orEmpty()
             var apkUrl: String? = null
             var apkName: String? = null
-            // Сначала universal (подходит любой ABI), иначе — первый .apk.
-            for (pass in 0 until 2) {
+            for (pass in 0 until 3) {
                 for (i in 0 until assets.length()) {
                     val a = assets.optJSONObject(i) ?: continue
                     val name = a.optString("name")
                     if (!name.endsWith(".apk", ignoreCase = true)) continue
                     val universal = name.contains("universal", ignoreCase = true)
-                    if (pass == 0 && !universal) continue
+                    val matchesAbi = primaryAbi.isNotBlank() && name.contains(primaryAbi, ignoreCase = true)
+                    val take = when (pass) {
+                        0 -> universal
+                        1 -> !universal && matchesAbi
+                        else -> !universal
+                    }
+                    if (!take) continue
                     apkUrl = a.optString("browser_download_url")
                     apkName = name
                     break
