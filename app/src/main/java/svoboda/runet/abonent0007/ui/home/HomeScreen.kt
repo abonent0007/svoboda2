@@ -1022,15 +1022,50 @@ private fun InfoCell(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 private fun StatusText(phase: VpnPhase) {
     when (phase) {
-        VpnPhase.CONNECTED -> NeonText(
-            text = "ПОДКЛЮЧЕНО",
-            gradient = GreenGradient,
-            fontSize = 32.sp,
-            letterSpacing = 3.sp,
-            strokeWidth = 7.dp,
-            glowAlpha = 0.9f,
-            fillColor = Color(0xFFE9FFF5),
-        )
+        VpnPhase.CONNECTED -> {
+            // «Пульс сердца»: перелив радугой + двукратное биение масштаба.
+            val heart = rememberInfiniteTransition(label = "heart")
+            val hue by heart.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(3600, easing = androidx.compose.animation.core.LinearEasing),
+                ),
+                label = "heartHue",
+            )
+            val beat by heart.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(900),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "heartBeat",
+            )
+            val scale = 1f + 0.07f * kotlin.math.abs(
+                kotlin.math.sin(beat * Math.PI * 2.0),
+            ).toFloat()
+            val rainbow = (0 until 5).map { i ->
+                val h = (hue + i * 45f) % 360f
+                Color(android.graphics.Color.HSVToColor(floatArrayOf(h, 0.95f, 1f)))
+            }
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                },
+            ) {
+                NeonText(
+                    text = "ПОДКЛЮЧЕНО",
+                    gradient = rainbow,
+                    fontSize = 32.sp,
+                    letterSpacing = 3.sp,
+                    strokeWidth = 7.dp,
+                    glowAlpha = 1f,
+                    fillColor = Color.White,
+                )
+            }
+        }
 
         VpnPhase.DEGRADED -> NeonText(
             text = "НЕТ ИНТЕРНЕТА",
@@ -1043,11 +1078,12 @@ private fun StatusText(phase: VpnPhase) {
         )
 
         VpnPhase.PREPARING, VpnPhase.CONNECTING, VpnPhase.VERIFYING -> {
+            // Ярче и «сочнее»: почти без прозрачности, сильное свечение.
             val pulse by rememberInfiniteTransition(label = "connPulse").animateFloat(
-                initialValue = 0.55f,
+                initialValue = 0.85f,
                 targetValue = 1f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(1500),
+                    animation = tween(1100),
                     repeatMode = RepeatMode.Reverse,
                 ),
                 label = "connPulseAlpha",
@@ -1060,8 +1096,9 @@ private fun StatusText(phase: VpnPhase) {
                     gradient = BlueGradient,
                     fontSize = 30.sp,
                     letterSpacing = 3.sp,
-                    strokeWidth = 6.dp,
-                    fillColor = Color(0xFFE9F2FF),
+                    strokeWidth = 7.dp,
+                    glowAlpha = 1f,
+                    fillColor = Color(0xFFF2F8FF),
                 )
             }
         }

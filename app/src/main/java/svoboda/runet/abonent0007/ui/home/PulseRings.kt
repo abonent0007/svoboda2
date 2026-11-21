@@ -46,13 +46,13 @@ fun PulseRings(modifier: Modifier = Modifier, running: Boolean = true, ringCount
             val p = if (running) (phase + offset).rem(1f) else 0f
             val radius = maxRadius * (0.06f + 0.94f * p)
             val alphaScale = if (running) (1f - p) * (1f - p) else 1f
-            val baseAlpha = 165f * (1f - i * 0.28f)
-            val effective = if (running) baseAlpha else 90f
+            val baseAlpha = 240f * (1f - i * 0.2f)
+            val effective = if (running) baseAlpha else 130f
             val alpha = (effective * alphaScale).toInt().coerceIn(0, 255)
             val strokeWidth = if (running) {
-                (3.6f - 2.2f * p) * density
+                (4.8f - 2.6f * p) * density
             } else {
-                1.6f * density
+                2.0f * density
             }
             drawCircle(
                 color = GoodGreen.copy(alpha = alpha / 255f),

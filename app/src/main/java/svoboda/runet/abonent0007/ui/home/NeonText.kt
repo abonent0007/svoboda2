@@ -54,9 +54,9 @@ fun NeonText(
             style = base.copy(
                 brush = brush,
                 shadow = Shadow(
-                    color = glowColor.copy(alpha = 0.55f * glowAlpha),
+                    color = glowColor.copy(alpha = 0.8f * glowAlpha),
                     offset = Offset.Zero,
-                    blurRadius = with(density) { 22.dp.toPx() },
+                    blurRadius = with(density) { 26.dp.toPx() },
                 ),
             ),
         )

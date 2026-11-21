@@ -1,33 +1,93 @@
 # Свобода 2.0
 
-Android no-root VPN-клиент на **AmneziaWG / WARP** с per-app split-tunnel,
-раздельными настройками подключений и автообновлением с GitHub Releases.
+Android-клиент для доступа в интернет без root и без «отваливания» российских сервисов.
+Три независимых транспорта — **AmneziaWG**, **Cloudflare WARP**, **DPI-обход** — плюс
+**AUTO**: автоматический выбор работающего канала с проверкой, что интернет реально идёт.
 
-`svoboda.runet.abonent0007` · minSdk 26 · targetSdk 35 · arm64-v8a + armeabi-v7a
+`svoboda.runet.abonent0007` · minSdk 26 · targetSdk 35 · arm64-v8a + armeabi-v7a · версия 2.0.9
 
-## Скриншоты
+---
 
-| Главный экран (подключено) | Меню — общие настройки |
-|---|---|
-| <img src="docs/shots/release_main.png" width="270" alt="Главный экран" /> | <img src="docs/shots/release_drawer.png" width="270" alt="Меню" /> |
+## Что это и зачем
 
-MTU: слайдер 1200–1480 и быстрые пресеты 1380–1480 с шагом 20:
+Проблема не в том, что «VPN не работает», а в том, что блокировки (DPI/TSPU) режут
+конкретные ресурсы, и обычный VPN при этом или не помогает, или рубит всё подряд —
+включая банки, госуслуги и локальные сервисы, которым зарубежный IP не нужен.
 
-<img src="docs/shots/release_mtu.png" width="270" alt="MTU" />
+«Свобода 2.0» решает две задачи сразу:
+
+1. **Доступ** — интернет работает там, где сейчас не работает (YouTube, Telegram, Gemini, ChatGPT и т.п.).
+2. **Сохранение доступа к своим** — банки, госуслуги, маркетплейсы, локальные сервисы идут **напрямую**, без VPN.
+
+Никакого root, никакого «принять все риски»: только разрешения `VpnService` и
+per-app split-tunnel.
+
+---
 
 ## Возможности
 
-- **Транспорт:** AmneziaWG (свои серверы) и WARP (генерация конфигурации через Cloudflare API).
-- **Профили:** 74 seed-конфига (default №11), собственные серверы, история и fingerprint профилей.
-- **Безопасность:** конфиги шифруются AES-256-GCM через Android Keystore; `allowBackup=false`.
-- **Split-tunnel:** ALL / ONLY_SELECTED / ALL_EXCEPT_SELECTED + пресеты (RU-приложения, мессенджеры, браузеры).
-- **Сеть:** DNS и IPv6 per-profile, MTU 1200–1480 (по умолчанию 1420) с быстрыми пресетами 1380–1480.
-- **Устойчивость:** ReconnectCoordinator (backoff 2/5/10/20/40/60 c + джиттер), health-check туннеля,
-  проверка handshake **и** HTTPS-proof перед публикацией `CONNECTED` (без ложных состояний).
-- **Android Lifecycle:** `onRevoke`, Always-on callback, Foreground Service (`systemExempted`), восстановление после смерти процесса.
-- **Способы подключения:** AWG и WARP доступны; DPI и AUTO — в разработке (кнопки неактивны).
-- **Автообновление:** проверка `releases/latest` при запуске, скачивание APK и передача системному установщику;
-  отключается в меню (`Автообновление`).
+- **Транспорт на выбор.**
+  - **AmneziaWG** — свои серверы (импорт `.conf`, генератор конфигурации с новыми ключами).
+  - **WARP** — регистрация и генерация профилей через Cloudflare API, пул anycast-endpoint'ов.
+  - **DPI** — локальный обход на ciadpi + tun2socks (HEV), каталог стратегий, SOCKS-порт.
+- **AUTO** — автоматический выбор транспорта по порядку (AWG → WARP → DPI), с проверкой
+  data plane и резервным переключением при отказе; ложный `CONNECTED` исключён.
+- **Раздельное туннелирование.** Режимы «весь трафик», «только выбранные», «все кроме выбранных»;
+  глобальный список **«напрямую»** (банки, госуслуги, сервисы) — один на все методы.
+  При первом запуске в список уже попадают установленные российские приложения.
+- **Списки приложений-спойлеры**: поиск по названию/пакету, все установленные приложения,
+  мгновенное переключение; выбранное в одном списке неактивно в другом.
+- **Честные статусы.** `CONNECTED` ставится только при подтверждённом HTTPS через туннель;
+  при частичной деградации — `LIMITED`/`DEGRADED`, а не тишина.
+- **Заметки по стабильности.** На главном экране — пульс состояния; анимация подключения
+  яркая, неоновая; кольца-индикаторы.
+- **Безопасность.** Конфиги профилей шифруются AES-256-GCM через Android Keystore;
+  `allowBackup=false`; список приложений не покидает устройство.
+- **Автообновление** из GitHub Releases (отключается в меню).
+
+---
+
+## MTU — почему это ключевая настройка
+
+**MTU (Maximum Transmission Unit)** — максимальный размер одного IP-пакета, который туннель
+передаёт без фрагментации. Это не косметика, а рабочий рычаг:
+
+- **Обход блокировок.** Технические средства противодействия угрозам (TSPU) анализируют
+  размеры и тайминги пакетов. Изменение MTU — один из реально работающих способов
+  обойти часть типов блокировок.
+- **«Зависание» трафика.** Слишком большой MTU → пакеты режутся и не собираются →
+  сеть «подвисает» при formalально живом туннеле. Слишком маленький → больше заголовков
+  на тот же трафик и просадка скорости.
+
+Поэтому цель — **обходить блокировки без зависания**: подбирать MTU под конкретную сеть.
+В приложении это ручка **1200–1480** с пресетами 1380–1480 и подсказкой на экране;
+по умолчанию 1440, 1420 — стандарт для WireGuard/AmneziaWG, 1280 — безопасный минимум (RFC 4821).
+
+---
+
+## Установка
+
+1. Скачайте APK из **GitHub Releases** (`app-arm64-v8a-release.apk` для современных устройств,
+   `app-universal-release.apk` —  universal). Подпись — debug.
+2. Разрешите установку из неизвестных источников; при первом подключении — разрешите VPN.
+3. Первый запуск: метод **AUTO**, автоподключение включено; при желании откройте шторку
+   (`☰`) и проверьте список **«напрямую»** — там уже стоят ваши российские приложения.
+
+## Скриншоты
+
+| Главный экран | Меню |
+|---|---|
+| <img src="docs/shots/release_main.png" width="270" alt="Главный экран" /> | <img src="docs/shots/release_drawer.png" width="270" alt="Меню" /> |
+
+| Настройки WARP | Настройки DPI |
+|---|---|
+| <img src="docs/shots/release_warp_settings.png" width="270" alt="Настройки WARP" /> | <img src="docs/shots/release_dpi_settings.png" width="270" alt="Настройки DPI" /> |
+
+## Диагностика
+
+- `auto_log.txt` в файлах приложения — журнал AUTO/подключений.
+- `adb logcat -s SvobodaVpn` — технический лог.
+- Кнопка **«Проверить связь»** — честная проверка выхода через туннель.
 
 ## Сборка
 
@@ -39,45 +99,10 @@ gradlew.bat assembleDebug --console=plain --no-daemon
 
 > `git\usr\bin` и `mingw64\bin` обязательны: без них NDK make падает на `uname -m`.
 
-Release-сборка (подпись из окружения):
+## Тесты
 
-```bat
-set KEYSTORE_PATH=...\release.keystore
-set KEYSTORE_PASSWORD=...
-set KEY_ALIAS=...
-set KEY_PASSWORD=...
-gradlew.bat assembleRelease --console=plain --no-daemon
-```
+`gradlew.bat :app:testDebugUnitTest` — 66 тестов (Vpn/Anti-bounce/quarantine, RemoteConfig, стратегии).
 
-Артефакты: `app/build/outputs/apk/{debug,release}/` (split APK по ABI + universal).
+## Статус
 
-## Архитектура
-
-- `:tunnel` — vendored `amneziawg-android` (Apache-2.0, v3.1.20260814) + `amneziawg-go`;
-  патч lifecycle: `LifecycleCallback` (`onVpnRevoked` / `onAlwaysOnTriggered`) и `onRevoke()`.
-- `app` — Compose UI, `VpnController`, `ConnectionManager`, `WarpGenerator`, `SeedCatalog`,
-  `OwnServerStore`, `ReconnectCoordinator`, `ConnectionStateRepository`, `Updater`.
-- `third_party/` — исходники DPI-движка (см. ниже) с закреплёнными SHA и лицензиями.
-
-## DPI (roadmap)
-
-Цель — вернуть локальный no-root DPI-bypass (YouTube/Telegram), не затрагивая VPN-ядро.
-
-- Эталон: **ByeByeDPI v1.8.2** (архитектура `VpnService TUN → hev-socks5-tunnel → ciadpi SOCKS5`).
-- Исходники получены и закреплены (MIT/BSD), манифест: `third_party/DPI_SOURCES.lock.json`.
-- Документация: `docs/BYE_BYE_DPI_PORT_MAP.md`, `docs/DPI_STATUS.md`, `docs/BYEDPI_STRATEGY_LAB.md`.
-- Контрольная стратегия BDP-00:
-  `-Ku -a3 -An -Kt,h -d1 -s0+s -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s -d35+s -An`.
-
-## Обновления
-
-Приложение проверяет `https://api.github.com/repos/abonent0007/svoboda2/releases/latest`.
-Версии сравниваются численно; откат не предлагается. Скачанный APK устанавливается через
-системный установщик (FileProvider). Откат вручную: `docs/ROLLBACK.md`.
-
-## Лицензии
-
-- `:tunnel` / `amneziawg-go` — Apache-2.0 / MIT (AmneziaVPN, WireGuard LLC).
-- ByeDPI (`third_party/byedpi`) — MIT.
-- hev-socks5-tunnel, hev-socks5-core, hev-task-system, yaml — MIT; lwIP — BSD-3-Clause.
-- Код ByeByeDPI (GPL-3.0) **не** копировался; JNI/интеграция будет собственной.
+Текущая версия — **2.0.9** (versionCode 209). Релизы публикуются на GitHub.
