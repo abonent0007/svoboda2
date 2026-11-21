@@ -422,6 +422,9 @@ class VpnController(
         val profileId = currentProfileId.ifBlank { "default" }
         val cfg = splitManager.resolve(profileId)
         val own = "svoboda.runet.abonent0007"
+        // В DPI-режиме ciadpi — отдельный процесс того же UID: без исключения собственного
+        // пакета его исходящие сокеты уходят в TUN → HEV → SOCKS5 → снова TUN (рекурсия).
+        val isDpi = currentProfileId == "dpi"
         val pm = appContext.packageManager
         fun installed(pkg: String) = runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
 
@@ -436,7 +439,7 @@ class VpnController(
 
         allow -= direct
         allow -= own
-        direct -= own
+        if (isDpi) direct += own else direct -= own
 
         val line = when {
             allow.any { installed(it) } ->

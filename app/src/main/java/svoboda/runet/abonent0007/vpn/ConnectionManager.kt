@@ -146,7 +146,7 @@ class ConnectionManager(
             if (!intentCheck()) {
                 return ConnectionResult.UserDisconnected
             }
-            runCatching { AppGraph.dpi.stopProcess() }   // H1: по здоровью ciadpi engine тоже должен умереть
+            // ciadpi НЕ убиваем: туннель остаётся живым, пробуем ещё раз (health/повтор).
             ConnectionResult.CandidateDegraded(candidateId, FailureKind.UNKNOWN, "socks probe failed on 127.0.0.1:$port")
         }
     }
@@ -401,23 +401,26 @@ class ConnectionManager(
      * игнорируется — в UI это явно подмечено.
      */
     private fun applyWarpSplit(profileId: String) {
+        // Режим, выбранный пользователем, сохраняем; синхронизируем только список,
+        // соответствующий этому режиму. Иначе переподключение молча затирало бы выбор.
+        val stored = AppGraph.splitManager.resolve(profileId)
         val tunnel = prefs.warpTunnelApps.filter { it.isNotBlank() }.toSet()
         val direct = resolveWarpDirectPackages()
-        val cfg = when {
-            tunnel.isNotEmpty() -> SplitTunnelConfig(
+        val cfg = when (stored.mode) {
+            SplitTunnelMode.ONLY_SELECTED -> SplitTunnelConfig(
                 profileId = profileId,
                 mode = SplitTunnelMode.ONLY_SELECTED,
                 packageNames = tunnel,
                 presetId = "warp_tunnel_apps",
             )
-            direct.isNotEmpty() -> SplitTunnelConfig(
+            SplitTunnelMode.ALL_EXCEPT_SELECTED -> SplitTunnelConfig(
                 profileId = profileId,
                 mode = SplitTunnelMode.ALL_EXCEPT_SELECTED,
                 packageNames = direct,
                 presetId = "global_direct_apps",
             )
-            else -> null
-        } ?: return
+            SplitTunnelMode.ALL -> return
+        }
         AppGraph.splitManager.update(profileId, cfg)
     }
 

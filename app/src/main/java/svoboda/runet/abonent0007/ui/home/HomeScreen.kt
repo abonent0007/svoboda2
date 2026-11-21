@@ -186,6 +186,7 @@ fun HomeScreen(
                 excludedCount = excludedCount,
                 serverTitle = serverTitle,
                 splitProfileId = splitProfileId,
+                drawerOpen = drawerState.isOpen,
                 connectionMethod = connectionMethod,
                 onConnectionMethod = {
                     if (it.available) {
@@ -557,6 +558,7 @@ private fun DrawerContent(
     excludedCount: Int,
     serverTitle: String?,
     splitProfileId: String,
+    drawerOpen: Boolean,
     connectionMethod: ConnectionMethod,
     onConnectionMethod: (ConnectionMethod) -> Unit,
     autoUpdate: Boolean,
@@ -588,8 +590,8 @@ private fun DrawerContent(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         val scope = rememberCoroutineScope()
-        val initialSplit = remember(splitProfileId) { AppGraph.splitManager.resolve(splitProfileId) }
-        var splitMode by remember(splitProfileId) { mutableStateOf(initialSplit.mode) }
+        val initialSplit = remember(splitProfileId, drawerOpen) { AppGraph.splitManager.resolve(splitProfileId) }
+        var splitMode by remember(splitProfileId, drawerOpen) { mutableStateOf(initialSplit.mode) }
         var presetDialog by remember { mutableStateOf(false) }
         var presetRollback by remember { mutableStateOf<Set<String>?>(null) }
         var showAbout by remember { mutableStateOf(false) }

@@ -97,9 +97,9 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("auto_update_enabled", true)
         set(value) = prefs.edit().putBoolean("auto_update_enabled", value).apply()
 
-    /** Выбранная стратегия ByeDPI (по умолчанию dpi_x03 — рабочая конфигурация). */
+    /** Выбранная стратегия ByeDPI (BDP-00 — эталон; проверена на RMX3370). */
     var dpiStrategyId: String
-        get() = prefs.getString("dpi_strategy_id", "dpi_x03").orEmpty()
+        get() = prefs.getString("dpi_strategy_id", "BDP-00").orEmpty()
         set(value) = prefs.edit().putString("dpi_strategy_id", value).apply()
 
     /** Порт локального SOCKS5 для DPI-движка. */
