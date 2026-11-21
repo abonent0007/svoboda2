@@ -57,8 +57,28 @@
 - Cloudflare API для новой WARP-регистрации из РФ недоступен (SSL timeout).
 - Telegram DC (149.154.x/91.108.x) через DPI недоступны (IP-блок) — нужен AWG/WARP.
 
-## Проверено на устройстве (2026-11-21)
+## Исправлено в 2.0.11 (этот прогон)
+
+### F6 · AUTO ронял рабочий DPI из-за проверки Telegram DC (CRITICAL)
+- **Симптом:** «Нет рабочего маршрута», туннель падал, все приложения без сети.
+- **Причина:** при выбранном DPI с подтверждённым data-plane, но недоступными Telegram DC,
+  код делал `disconnect()` + `continue` — и если AWG/WARP уже отказали, AUTO заканчивался
+  без маршрута. Это противоречит решению пользователя (`DPI_FALLBACK_DECISION`, сценарий B:
+  «Data Plane OK + Telegram DC FAIL → CONNECTED · LIMITED»).
+- **Fix:** маршрут не роняем; фиксируем статус «интернет работает, Telegram ограничен».
+
+### F7 · AUTO не проверял сохранённый удачный WARP-конфиг
+- **Симптом:** WARP в AUTO падал (`warp:generated: data-plane rejected`, `warp:seed11: TRANSPORT_FAIL`),
+  хотя рабочий конфиг уже сохранён; в режиме WARP он подключался.
+- **Причина:** `connectWarpWithGeneration` не проверяет свой bootstrap (lastGood) —
+  при недоступном Cloudflare API AUTO терял WARP.
+- **Fix:** в AUTO добавлен кандидат `warp:lastgood` (последний удачный конфиг).
+
+## Проверено на устройстве (2026-11-21, релиз 2.0.11)
+
+> **Пользователь подтвердил: «все работает» (2026-11-21).** Устройство: Realme RMX3370 (`97db202c`), установлена 2.0.11, метод AUTO → WARP · последний рабочий, ПОДКЛЮЧЕНО.
 - AUTO → WARP (сгенерированные профили) → CONNECTED, выход CF; стабильно.
+- **2.0.11:** AUTO → WARP (lastGood) → CONNECTED; Chrome, YouTube, Telegram работают через туннель; Avito (direct) — напрямую.
 - DPI (BDP-00) → CONNECTED, выход 92.36.67.99, ping ~290 мс, health healthy.
 - Chrome через DPI-туннель: example.com загружается.
 - Split-tunnel: 20 пакетов исключены (проверено по UID-диапазонам VPN).
