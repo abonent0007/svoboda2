@@ -83,6 +83,10 @@ per-app split-tunnel.
 |---|---|
 | <img src="docs/shots/release_warp_settings.png" width="270" alt="Настройки WARP" /> | <img src="docs/shots/release_dpi_settings.png" width="270" alt="Настройки DPI" /> |
 
+Разработчик и поддержка проекта:
+
+<img src="docs/shots/release_about.png" width="270" alt="О приложении" />
+
 ## Диагностика
 
 - `auto_log.txt` в файлах приложения — журнал AUTO/подключений.

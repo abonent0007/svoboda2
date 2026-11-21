@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -585,6 +586,7 @@ private fun DrawerContent(
         var splitMode by remember(splitProfileId) { mutableStateOf(initialSplit.mode) }
         var presetDialog by remember { mutableStateOf(false) }
         var presetRollback by remember { mutableStateOf<Set<String>?>(null) }
+        var showAbout by remember { mutableStateOf(false) }
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -764,6 +766,40 @@ private fun DrawerContent(
             }) { Text("ОТМЕНИТЬ ПРЕСЕТ", color = AccentGreen) }
         }
 
+        if (showAbout) {
+            val context = LocalContext.current
+            AlertDialog(
+                onDismissRequest = { showAbout = false },
+                title = { Text("О приложении") },
+                text = {
+                    Column {
+                        Text(
+                            "Свобода 2.0 · v${BuildConfig.VERSION_NAME}",
+                            color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Разработчик: Птицын Юрий Юрьевич", color = TextPrimary, fontSize = 13.sp)
+                        Text("© 2026", color = TextSecondary, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Поддержать проект", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text("T-Банк, Сбер — по номеру:", color = TextSecondary, fontSize = 12.sp)
+                        TextButton(onClick = {
+                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("donate", "+79684520007"))
+                            android.widget.Toast.makeText(context, "Номер скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                        }) {
+                            Text("+7 968 452-00-07", color = AccentGreen, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text("Нажмите на номер, чтобы скопировать", color = TextSecondary, fontSize = 10.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showAbout = false }) { Text("ЗАКРЫТЬ") }
+                },
+            )
+        }
+
         SectionHeader("СЕТЬ")
 
         TileRow(
@@ -784,8 +820,9 @@ private fun DrawerContent(
 
         TileRow(
             title = "О приложении",
-            value = "Свобода 2.0 · v${BuildConfig.VERSION_NAME}",
+            value = "разработчик, донаты",
             opaque = true,
+            onClick = { showAbout = true },
         )
 
         TileRow(
