@@ -128,6 +128,8 @@ fun HomeScreen(
     onSplitToggle: (Boolean) -> Unit,
     onPickApps: () -> Unit,
     onOpenServers: () -> Unit,
+    updateMessage: String? = null,
+    onDismissUpdate: () -> Unit = {},
     onCheckUpdates: () -> Unit,
 ) {
     val connected = phase == VpnPhase.CONNECTED || phase == VpnPhase.DEGRADED
@@ -223,6 +225,8 @@ fun HomeScreen(
                 onPickApps = onPickApps,
                 onOpenServers = onOpenServers,
                 onCheckUpdates = onCheckUpdates,
+                updateMessage = updateMessage,
+                onDismissUpdate = onDismissUpdate,
                 onClose = { scope.launch { drawerState.close() } },
             )
         },
@@ -234,7 +238,7 @@ fun HomeScreen(
             )
             NeuralLines(
                 modifier = Modifier.fillMaxSize(),
-                active = busy,
+                active = busy || connected,
             )
 
             // Верхняя панель: неоновый заголовок по центру.
@@ -568,6 +572,8 @@ private fun DrawerContent(
     onSplitToggle: (Boolean) -> Unit,
     onPickApps: () -> Unit,
     onOpenServers: () -> Unit,
+    updateMessage: String? = null,
+    onDismissUpdate: () -> Unit = {},
     onCheckUpdates: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -796,6 +802,17 @@ private fun DrawerContent(
                 },
                 confirmButton = {
                     TextButton(onClick = { showAbout = false }) { Text("ЗАКРЫТЬ") }
+                },
+            )
+        }
+
+        if (updateMessage != null) {
+            AlertDialog(
+                onDismissRequest = onDismissUpdate,
+                title = { Text("Обновления") },
+                text = { Text(updateMessage ?: "", color = TextPrimary, fontSize = 14.sp) },
+                confirmButton = {
+                    TextButton(onClick = onDismissUpdate) { Text("ЗАКРЫТЬ") }
                 },
             )
         }

@@ -69,8 +69,8 @@ fun NeuralLines(
         if (size.width <= 0f || size.height <= 0f) return@Canvas
         val edgeCount = edges.size
         val slot = 1f / edgeCount
-        val nodeRadius = 1.6f
-        val strokeWidth = 1.2f
+        val nodeRadius = 2.0f
+        val strokeWidth = 1.6f
 
         // Экранные координаты узлов.
         val w = size.width
@@ -93,7 +93,7 @@ fun NeuralLines(
                 }
             }
             drawCircle(
-                color = color.copy(alpha = brightness.coerceIn(0f, 0.55f)),
+                color = color.copy(alpha = brightness.coerceIn(0f, 0.8f)),
                 radius = nodeRadius,
                 center = nodeAt(i),
             )
@@ -110,7 +110,7 @@ fun NeuralLines(
             if (local >= 1f) {
                 // Построено: слабая постоянная линия.
                 drawLine(
-                    color = color.copy(alpha = 0.10f),
+                    color = color.copy(alpha = 0.16f),
                     start = from,
                     end = to,
                     strokeWidth = strokeWidth,
@@ -120,7 +120,7 @@ fun NeuralLines(
                 val t = FastOutSlowInEasing.transform((local / 0.85f).coerceIn(0f, 1f))
                 val appear = (local / 0.15f).coerceIn(0f, 1f)
                 drawLine(
-                    color = color.copy(alpha = min(appear, 1f - local) * 0.32f),
+                    color = color.copy(alpha = min(appear, 1f - local) * 0.5f),
                     start = from,
                     end = Offset(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t),
                     strokeWidth = strokeWidth,
@@ -140,7 +140,7 @@ fun NeuralLines(
             val from = nodeAt(a)
             val to = nodeAt(b)
             val dot = Offset(from.x + (to.x - from.x) * pos, from.y + (to.y - from.y) * pos)
-            drawCircle(color = color.copy(alpha = 0.55f), radius = 2.4f, center = dot)
+            drawCircle(color = color.copy(alpha = 0.8f), radius = 2.6f, center = dot)
         }
     }
 }

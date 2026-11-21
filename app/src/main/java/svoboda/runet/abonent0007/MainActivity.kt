@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
             var activeServer by remember { mutableStateOf(AppGraph.manager.activeServer()) }
             var showServers by remember { mutableStateOf(false) }
             var showAddServer by remember { mutableStateOf(false) }
+            var updateMessage by remember { mutableStateOf<String?>(null) }
 
             fun doConnect(scope: CoroutineScope) {
                 // Выбранный на главном экране способ подключения:
@@ -131,23 +132,24 @@ class MainActivity : ComponentActivity() {
                     },
                     onPickApps = { showPicker = true },
                     onOpenServers = { showServers = true },
+                    updateMessage = updateMessage,
+                    onDismissUpdate = { updateMessage = null },
                     onCheckUpdates = {
                         scope.launch {
-                            controller.setStatus("Проверка обновлений…")
+                            updateMessage = "Обновляю…"
                             val rel = Updater.checkLatest()
                             if (rel == null) {
-                                controller.setStatus("Обновлений нет")
+                                updateMessage = "Уже установлена последняя версия"
                                 return@launch
                             }
-                            controller.setStatus("Загрузка ${rel.versionName}…")
                             val file = Updater.download(this@MainActivity, rel.apkUrl) { p ->
-                                controller.setStatus("Загрузка ${rel.versionName}: $p%")
+                                updateMessage = "Обновляю… $p%"
                             }
                             if (file == null) {
-                                controller.setStatus("Ошибка загрузки")
+                                updateMessage = "Не удалось скачать обновление"
                                 return@launch
                             }
-                            controller.setStatus("Установка ${rel.versionName}…")
+                            updateMessage = "Скачано. Открываю установщик…"
                             startActivity(Updater.installIntent(this@MainActivity, file))
                         }
                     },
