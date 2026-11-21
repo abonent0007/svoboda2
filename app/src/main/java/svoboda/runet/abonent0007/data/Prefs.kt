@@ -90,11 +90,10 @@ class Prefs(context: Context) {
     /**
      * Автообновление: при старте проверять GitHub Releases, скачивать APK
      * и передавать его системному установщику.
-     * По умолчанию ВЫКЛ: репозиторий приватный, releases/latest недоступен (404),
-     * включать осознанно, когда появится публичный канал обновлений.
+     * Репозиторий публичный — включено по умолчанию; выключается тумблером в меню.
      */
     var autoUpdateEnabled: Boolean
-        get() = prefs.getBoolean("auto_update_enabled", false)
+        get() = prefs.getBoolean("auto_update_enabled", true)
         set(value) = prefs.edit().putBoolean("auto_update_enabled", value).apply()
 
     /** Выбранная стратегия ByeDPI (BDP-00 — эталон). */
@@ -141,10 +140,10 @@ class Prefs(context: Context) {
         set(value) = prefs.edit().putBoolean("dpi_map_dns", value).apply()
 
     /** Выбранные домены для бенчмарка DPI (сохраняются между запусками). */
-    /** Сервисы, чей трафик заворачивается в туннель (раздельное туннелирование по маршрутам). */
-    var tunnelServiceScope: Set<String>
-        get() = prefs.getStringSet("tunnel_service_scope", emptySet()) ?: emptySet()
-        set(value) = prefs.edit().putStringSet("tunnel_service_scope", value).apply()
+    /** DPI: приложения, чей трафик идёт через туннель (allowlist, пакеты). Пусто — весь трафик. */
+    var dpiTunnelApps: Set<String>
+        get() = prefs.getStringSet("dpi_tunnel_apps", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("dpi_tunnel_apps", value).apply()
 
     /** AUTO: приоритет стран выхода (ISO-коды через запятую). */
     var autoCountryPriority: String
@@ -176,10 +175,23 @@ class Prefs(context: Context) {
         get() = prefs.getInt("auto_hold_minutes", 5).coerceIn(0, 120)
         set(value) = prefs.edit().putInt("auto_hold_minutes", value).apply()
 
-    /** Сервисы, которые направляются мимо туннеля (раздельное туннелирование, WARP). */
+    /**
+     * Сервисы, которые направляются мимо туннеля (раздельное туннелирование, WARP).
+     * @deprecated оставлено для миграции: заполнялось  id сервисов (whatsapp/viber/...).
+     */
     var serviceDirectSelection: Set<String>
         get() = prefs.getStringSet("service_direct_selection", emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet("service_direct_selection", value).apply()
+
+    /** WARP: приложения, чей трафик идёт через туннель (allowlist, пакеты). */
+    var warpTunnelApps: Set<String>
+        get() = prefs.getStringSet("warp_tunnel_apps", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("warp_tunnel_apps", value).apply()
+
+    /** WARP: приложения мимо туннеля (denylist, пакеты). */
+    var warpDirectApps: Set<String>
+        get() = prefs.getStringSet("warp_direct_apps", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("warp_direct_apps", value).apply()
 
     var dpiBenchmarkDomains: Set<String>
         get() = prefs.getStringSet("dpi_benchmark_domains", null)

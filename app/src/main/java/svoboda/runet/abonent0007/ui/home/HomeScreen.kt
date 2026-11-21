@@ -855,6 +855,12 @@ private fun MtuCard(mtu: Int, onMtu: (Int) -> Unit) {
                 Text("1200", color = TextSecondary, fontSize = 10.sp)
                 Text("1480", color = TextSecondary, fontSize = 10.sp)
             }
+            Text(
+                text = svoboda.runet.abonent0007.ui.method.MTU_DESCRIPTION,
+                color = TextSecondary,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+            )
             Spacer(modifier = Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -28,7 +28,7 @@ object Updater {
     /** Fallback без API: редирект страницы latest на тег + ассет с фиксированным именем. */
     private const val LATEST_PAGE = "https://github.com/$REPO/releases/latest"
     private const val LATEST_APK =
-        "https://github.com/$REPO/releases/latest/download/svoboda2-latest-universal.apk"
+        "https://github.com/$REPO/releases/latest/download/app-universal-release.apk"
     private const val UA = "Svoboda2-Updater"
 
     /** Числовое сравнение версий "2.0.10" > "2.0.9". Нечисловые суффиксы игнорируются. */
@@ -85,14 +85,19 @@ object Updater {
             val assets = json.optJSONArray("assets") ?: return@runCatching null
             var apkUrl: String? = null
             var apkName: String? = null
-            for (i in 0 until assets.length()) {
-                val a = assets.optJSONObject(i) ?: continue
-                val name = a.optString("name")
-                if (name.endsWith(".apk", ignoreCase = true)) {
+            // Сначала universal (подходит любой ABI), иначе — первый .apk.
+            for (pass in 0 until 2) {
+                for (i in 0 until assets.length()) {
+                    val a = assets.optJSONObject(i) ?: continue
+                    val name = a.optString("name")
+                    if (!name.endsWith(".apk", ignoreCase = true)) continue
+                    val universal = name.contains("universal", ignoreCase = true)
+                    if (pass == 0 && !universal) continue
                     apkUrl = a.optString("browser_download_url")
                     apkName = name
                     break
                 }
+                if (apkUrl != null) break
             }
             if (apkUrl.isNullOrBlank()) return@runCatching null
             Release(tag, apkUrl, apkName!!, json.optString("published_at"))

@@ -47,6 +47,7 @@ fun ActionChip(
             },
             fontSize = 12.sp,
             maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
         )

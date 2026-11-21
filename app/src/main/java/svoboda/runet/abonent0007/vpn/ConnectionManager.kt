@@ -204,7 +204,7 @@ class ConnectionManager(
 
     private suspend fun connectWarpWithGeneration(): ConnectionResult {
         controller.currentProfileId = "warp"
-        applyServiceDirect("warp")
+        applyWarpSplit("warp")
         // Jc/Jmin/Jmax и I1 берём из проверенного профиля №11: та же
         // обфускация, что уже проходит DPI.
         val seedForParams = SeedCatalog.defaultSeed(seeds)
@@ -392,6 +392,44 @@ class ConnectionManager(
                 presetId = "services_direct",
             ),
         )
+    }
+
+    /**
+     * Раздельное туннелирование WARP с учётом обоих списков (в туннель / напрямую).
+     * Android не позволяет одновременно addAllowedApplication и addDisallowedApplication,
+     * поэтому отдаём один режим: allowlist (в туннель) приоритетнее, denylist в этом случае
+     * игнорируется — в UI это явно подмечено.
+     */
+    private fun applyWarpSplit(profileId: String) {
+        val tunnel = prefs.warpTunnelApps.filter { it.isNotBlank() }.toSet()
+        val direct = resolveWarpDirectPackages()
+        val cfg = when {
+            tunnel.isNotEmpty() -> SplitTunnelConfig(
+                profileId = profileId,
+                mode = SplitTunnelMode.ONLY_SELECTED,
+                packageNames = tunnel,
+                presetId = "warp_tunnel_apps",
+            )
+            direct.isNotEmpty() -> SplitTunnelConfig(
+                profileId = profileId,
+                mode = SplitTunnelMode.ALL_EXCEPT_SELECTED,
+                packageNames = direct,
+                presetId = "warp_direct_apps",
+            )
+            else -> null
+        } ?: return
+        AppGraph.splitManager.update(profileId, cfg)
+    }
+
+    /** Миграция service_direct_selection (id сервисов) → пакеты warp_direct_apps. */
+    private fun resolveWarpDirectPackages(): Set<String> {
+        val stored = prefs.warpDirectApps
+        if (stored.isNotEmpty()) return stored
+        val legacy = prefs.serviceDirectSelection
+        if (legacy.isEmpty()) return emptySet()
+        val pkgs = ServiceCatalog.packagesFor(AppGraph.appContext, legacy) + ServiceCatalog.fallbackPackages(legacy)
+        prefs.warpDirectApps = pkgs
+        return pkgs
     }
 
     /** Подключиться к встроенному публичному WARP-серверу; страну измеряем после подключения. */

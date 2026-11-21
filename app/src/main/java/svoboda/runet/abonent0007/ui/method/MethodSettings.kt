@@ -203,6 +203,12 @@ private fun MtuRow(mtu: Int, onMtu: (Int) -> Unit) {
                 Text("1200", color = TextSecondary, fontSize = 10.sp)
                 Text("1480", color = TextSecondary, fontSize = 10.sp)
             }
+            Text(
+                text = MTU_DESCRIPTION,
+                color = TextSecondary,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+            )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(1380, 1400, 1420, 1440, 1460, 1480).forEach { v ->
                     val selected = mtu == v
@@ -313,6 +319,41 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
+    // 1. Публичные сервисы — самый верх меню, кнопками.
+    SectionTitle("ПУБЛИЧНЫЕ СЕРВИСЫ · NL/FI/США")
+    Text(
+        text = "Коллективные identity (чужие операторы): метаданные соединений им видны. " +
+            "Доступность не гарантирована; страна выхода измеряется после подключения.",
+        color = TextSecondary,
+        fontSize = 11.sp,
+    )
+    publicServers.chunked(3).forEach { rowServers ->
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            rowServers.forEach { server ->
+                val country = publicCountries[server.id]
+                ActionChip(
+                    text = server.title + (country?.let { " · $it" } ?: ""),
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        scope.launch {
+                            status = "Подключение ${server.host}:${server.port} …"
+                            val ok = AppGraph.manager.connectPublicServer(server.id)
+                            status = if (ok) {
+                                "Подключено: ${server.title}"
+                            } else {
+                                "Не удалось подключить ${server.host}"
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+    status?.let {
+        TileRow(title = "Статус", value = it, opaque = true)
+    }
+
+    // 2. Регистрация.
     SectionTitle("РЕГИСТРАЦИЯ")
     TileRow(
         title = "Новая WARP-регистрация",
@@ -336,46 +377,29 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
     status?.let {
         TileRow(title = "Результат", value = it, opaque = true)
     }
+
+    // 3. Параметры туннеля.
     SectionTitle("ПАРАМЕТРЫ ТУННЕЛЯ")
     MtuRow(mtu = mtu, onMtu = onMtu)
 
-    ServiceScopePicker(title = "СЕРВИСЫ В ТУННЕЛЬ (WARP)")
-
-    SectionTitle("ПУБЛИЧНЫЕ СЕРВЕРЫ · NL/FI/США")
-    Text(
-        text = "ВНИМАНИЕ: чужие операторы (коллективные identity), метаданные соединений им видны. " +
-            "Строго NL/FI/US без своего сервера не гарантируются. Рекомендуется свой VPS. " +
-            "Публично опубликованные WARP-конфиги (Delta-Kronecker/Cloudflare-Warp), " +
-            "страна в имени хоста. Страна выхода измеряется после подключения и отображается рядом. " +
-            "Доступность не гарантирована — это публичные коллективные identity.",
-        color = TextSecondary,
-        fontSize = 11.sp,
+    // 4. В туннель — per-app allowlist (поиск + все приложения + галки).
+    var tunnelApps by remember { mutableStateOf(AppGraph.prefs.warpTunnelApps) }
+    var directApps by remember { mutableStateOf(AppGraph.prefs.warpDirectApps) }
+    AppScopeTile(
+        title = "В ТУННЕЛЬ (WARP)",
+        subtitle = "только выбранные приложения идут через VPN",
+        selected = tunnelApps,
+        disabled = directApps,
+        onApply = { sel ->
+            val next = sel - directApps
+            tunnelApps = next
+            directApps = directApps - next
+            AppGraph.prefs.warpTunnelApps = next
+            AppGraph.prefs.warpDirectApps = directApps
+        },
     )
-    publicServers.chunked(3).forEach { rowServers ->
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            rowServers.forEach { server ->
-                val country = publicCountries[server.id]
-                ActionChip(
-                    text = server.title + (country?.let { " · $it" } ?: ""),
-                    onClick = {
-                        scope.launch {
-                            status = "Подключение ${server.host}:${server.port} …"
-                            val ok = AppGraph.manager.connectPublicServer(server.id)
-                            status = if (ok) {
-                                "Подключено: ${server.title}"
-                            } else {
-                                "Не удалось подключить ${server.host}"
-                            }
-                        }
-                    },
-                )
-            }
-        }
-    }
-    status?.let {
-        TileRow(title = "Статус", value = it, opaque = true)
-    }
 
+    // 5. DNS.
     SectionTitle("DNS В КОНФИГЕ")
     var dnsValue by remember { mutableStateOf(WarpGenerator.resolveDns("cloudflare")) }
     Text(
@@ -389,132 +413,126 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
         onApply = { dnsValue = it },
     )
 
-    SectionTitle("СЕРВИСЫ НАПРЯМУЮ")
-    var directServices by remember { mutableStateOf(AppGraph.prefs.serviceDirectSelection) }
-    Text(
-        text = "Раздельное туннелирование: выбранные приложения идут мимо туннеля (мимо WARP). " +
-            "Пакеты определяются по названию установленного приложения. LAN-трафик при этом " +
-            "и так идёт напрямую — физические подсети приоритетнее маршрута 0/0 туннеля.",
-        color = TextSecondary,
-        fontSize = 11.sp,
+    // 6. Напрямую — per-app denylist.
+    AppScopeTile(
+        title = "НАПРЯМУЮ (WARP)",
+        subtitle = "выбранные приложения идут мимо VPN",
+        selected = directApps,
+        disabled = tunnelApps,
+        onApply = { sel ->
+            val next = sel - tunnelApps
+            directApps = next
+            tunnelApps = tunnelApps - next
+            AppGraph.prefs.warpDirectApps = next
+            AppGraph.prefs.warpTunnelApps = tunnelApps
+        },
     )
-    ServiceCatalog.services.chunked(2).forEach { rowServices ->
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            rowServices.forEach { service ->
-                val selected = directServices.contains(service.id)
-                ActionChip(
-                    text = service.title,
-                    selected = selected,
-                    onClick = {
-                        directServices = if (selected) directServices - service.id else directServices + service.id
-                        AppGraph.prefs.serviceDirectSelection = directServices
-                    },
-                )
-            }
-        }
-    }
 
-    SectionTitle("WARP-ПРОФИЛИ")
+    // 7. Профили — свёрнуты.
     var profileCount by remember { mutableStateOf(10) }
     var profileBusy by remember { mutableStateOf(false) }
     var profileStatus by remember { mutableStateOf<String?>(null) }
     var profiles by remember { mutableStateOf(AppGraph.manager.generatedProfiles()) }
-
-    Text(
-        text = "Массовое создание конфигов: одна регистрация в Cloudflare, разные anycast-endpoint'ы " +
-            "и рандомизированные junk-параметры (Jc/Jmin/Jmax) — профили не выглядят одинаково для DPI.",
-        color = TextSecondary,
-        fontSize = 11.sp,
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(5, 10, 25).forEach { n ->
-            ActionChip(
-                text = "$n",
-                selected = profileCount == n,
-                onClick = { profileCount = n },
-            )
-        }
-    }
-    TileRow(
-        title = "Создать профили WARP",
-        value = if (profileBusy) "регистрация и сборка…" else "новая identity + $profileCount конфигов",
-        opaque = true,
-        onClick = {
-            if (profileBusy) return@TileRow
-            profileBusy = true
-            profileStatus = null
-            scope.launch {
-                val seedRaw = SeedCatalog.defaultSeed(AppGraph.seeds)?.raw_config.orEmpty()
-                val result = WarpProfileFactory.generate(
-                    count = profileCount,
-                    identity = null,
-                    seedRawConfig = seedRaw,
-                    dns = dnsValue,
-                )
-                result.profiles.forEach { AppGraph.manager.addGeneratedProfile(it) }
-                profiles = AppGraph.manager.generatedProfiles()
-                profileBusy = false
-                profileStatus = if (result.profiles.isEmpty()) {
-                    "Не удалось создать профили. ${result.note}"
-                } else {
-                    result.note
-                }
-            }
-        },
-    )
-    profileStatus?.let {
-        TileRow(title = "Результат", value = it, opaque = true)
-    }
-    profiles.forEach { profile ->
-        val jc = Regex("(?m)^Jc\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
-        val jmin = Regex("(?m)^Jmin\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
-        val jmax = Regex("(?m)^Jmax\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = "${profile.host}:${profile.port}" +
-                    (if (jc.isNotBlank()) "   ·   Jc $jc, Jmin $jmin, Jmax $jmax" else "") +
-                    (if (profile.observedCountry.isNotBlank()) "   ·   ${profile.observedCountry}" else ""),
-                color = TextPrimary,
-                fontSize = 12.sp,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    ExpandableTile(
+        title = "WARP-ПРОФИЛИ",
+        subtitle = "создано: ${profiles.size}",
+    ) {
+        Text(
+            text = "Массовое создание конфигов: одна регистрация в Cloudflare, разные anycast-endpoint'ы " +
+                "и рандомизированные junk-параметры (Jc/Jmin/Jmax) — профили не выглядят одинаково для DPI.",
+            color = TextSecondary,
+            fontSize = 11.sp,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(5, 10, 25).forEach { n ->
                 ActionChip(
-                    text = "ПОДКЛЮЧИТЬ",
-                    onClick = {
-                        scope.launch {
-                            profileStatus = "Подключение ${profile.host}:${profile.port} …"
-                            val ok = AppGraph.manager.connectGeneratedProfile(profile)
-                            status = if (ok) {
-                                "Подключено: ${profile.host}:${profile.port}"
-                            } else {
-                                "Не удалось подключить ${profile.host}:${profile.port}"
-                            }
-                        }
-                    },
-                )
-                ActionChip(
-                    text = "УДАЛИТЬ",
-                    onClick = {
-                        AppGraph.manager.removeGeneratedProfile(profile)
-                        profiles = AppGraph.manager.generatedProfiles()
-                    },
+                    text = "$n",
+                    selected = profileCount == n,
+                    onClick = { profileCount = n },
                 )
             }
         }
-    }
-    if (profiles.isNotEmpty()) {
-        ActionChip(
-            text = "УДАЛИТЬ ВСЕ ПРОФИЛИ",
+        TileRow(
+            title = "Создать профили WARP",
+            value = if (profileBusy) "регистрация и сборка…" else "новая identity + $profileCount конфигов",
+            opaque = true,
             onClick = {
-                AppGraph.manager.clearGeneratedProfiles()
-                profiles = AppGraph.manager.generatedProfiles()
+                if (profileBusy) return@TileRow
+                profileBusy = true
+                profileStatus = null
+                scope.launch {
+                    val seedRaw = SeedCatalog.defaultSeed(AppGraph.seeds)?.raw_config.orEmpty()
+                    val result = WarpProfileFactory.generate(
+                        count = profileCount,
+                        identity = null,
+                        seedRawConfig = seedRaw,
+                        dns = dnsValue,
+                    )
+                    result.profiles.forEach { AppGraph.manager.addGeneratedProfile(it) }
+                    profiles = AppGraph.manager.generatedProfiles()
+                    profileBusy = false
+                    profileStatus = if (result.profiles.isEmpty()) {
+                        "Не удалось создать профили. ${result.note}"
+                    } else {
+                        result.note
+                    }
+                }
             },
         )
+        profileStatus?.let {
+            TileRow(title = "Результат", value = it, opaque = true)
+        }
+        profiles.forEach { profile ->
+            val jc = Regex("(?m)^Jc\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
+            val jmin = Regex("(?m)^Jmin\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
+            val jmax = Regex("(?m)^Jmax\\s*=\\s*(\\d+)").find(profile.config)?.groupValues?.get(1).orEmpty()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = "${profile.host}:${profile.port}" +
+                        (if (jc.isNotBlank()) "   ·   Jc $jc, Jmin $jmin, Jmax $jmax" else "") +
+                        (if (profile.observedCountry.isNotBlank()) "   ·   ${profile.observedCountry}" else ""),
+                    color = TextPrimary,
+                    fontSize = 12.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ActionChip(
+                        text = "ПОДКЛЮЧИТЬ",
+                        onClick = {
+                            scope.launch {
+                                profileStatus = "Подключение ${profile.host}:${profile.port} …"
+                                val ok = AppGraph.manager.connectGeneratedProfile(profile)
+                                status = if (ok) {
+                                    "Подключено: ${profile.host}:${profile.port}"
+                                } else {
+                                    "Не удалось подключить ${profile.host}:${profile.port}"
+                                }
+                            }
+                        },
+                    )
+                    ActionChip(
+                        text = "УДАЛИТЬ",
+                        onClick = {
+                            AppGraph.manager.removeGeneratedProfile(profile)
+                            profiles = AppGraph.manager.generatedProfiles()
+                        },
+                    )
+                }
+            }
+        }
+        if (profiles.isNotEmpty()) {
+            ActionChip(
+                text = "УДАЛИТЬ ВСЕ ПРОФИЛИ",
+                onClick = {
+                    AppGraph.manager.clearGeneratedProfiles()
+                    profiles = AppGraph.manager.generatedProfiles()
+                },
+            )
+        }
     }
 }
 
@@ -618,7 +636,16 @@ private fun DpiSettings(onOpenBenchmark: () -> Unit = {}) {
         DpiComment("Бенчмарк по очереди перезапускает ciadpi с каждой стратегией каталога, проверяет выбранные домены (DNS/TCP/TLS/HTTP) и строит рейтинг. Исходные настройки стратегии восстанавливаются после прогона.")
     }
 
-    ServiceScopePicker(title = "СЕРВИСЫ В ТУННЕЛЬ (DPI)")
+    var tunnelApps by remember { mutableStateOf(prefs.dpiTunnelApps) }
+    AppScopeTile(
+        title = "В ТУННЕЛЬ (DPI)",
+        subtitle = "только выбранные приложения идут через VPN",
+        selected = tunnelApps,
+        onApply = {
+            tunnelApps = it
+            prefs.dpiTunnelApps = it
+        },
+    )
 
     SectionTitle("СТРАТЕГИИ")
     DpiComment(DPI_COMMENT_CATALOG)

@@ -88,7 +88,7 @@ fun TileRow(
 @Composable
 fun NeonSwitch(
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+    onCheckedChange: ((Boolean) -> Unit)?,
 ) {
     Box(
         modifier = Modifier

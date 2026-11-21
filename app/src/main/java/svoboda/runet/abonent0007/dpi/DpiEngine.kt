@@ -7,7 +7,6 @@ import kotlinx.coroutines.withContext
 import svoboda.runet.abonent0007.data.Prefs
 import svoboda.runet.abonent0007.split.SplitTunnelManager
 import svoboda.runet.abonent0007.net.NetProbe
-import svoboda.runet.abonent0007.warp.ServiceIpRanges
 import svoboda.runet.abonent0007.dpi.dpiStrategyById
 import svoboda.runet.abonent0007.dpi.DPI_DEFAULT_STRATEGY_ID
 import svoboda.runet.abonent0007.vpn.VpnController
@@ -147,9 +146,7 @@ class DpiEngine(
 
         // 2. TUN через GoBackend в DPI-режиме (handoff fd → HEV внутри VpnController/GoBackend)
         val split = splitManager.resolve(vpn.currentProfileId.ifBlank { "warp" })
-        val scope = prefs.tunnelServiceScope
-        val allowedIps = ServiceIpRanges.allowedIps(context, scope)
-        val config = DpiConfig.build(prefs, split, allowedIpsOverride = allowedIps)
+        val config = DpiConfig.build(prefs, split, includedApps = prefs.dpiTunnelApps)
         val ok = vpn.connectDpi(config)
         if (!ok) {
             Log.e(TAG, "DPI engine: TUN bring-up failed")

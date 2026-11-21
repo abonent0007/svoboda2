@@ -24,7 +24,7 @@ object DpiConfig {
     fun build(
         prefs: Prefs,
         split: SplitTunnelConfig,
-        allowedIpsOverride: String? = null,
+        includedApps: Set<String> = emptySet(),
     ): String {
         val mtu = prefs.tunnelMtu.coerceIn(1200, 1480)
         val dns = if (prefs.dpiMapDns) "198.18.0.2" else prefs.dnsServers.ifBlank { "1.1.1.1, 1.0.0.1" }
@@ -33,8 +33,18 @@ object DpiConfig {
         if (split.mode == SplitTunnelMode.ALL_EXCEPT_SELECTED) {
             excluded += split.packageNames.filter { it.isNotBlank() }
         }
-        if (split.mode != SplitTunnelMode.ONLY_SELECTED) {
-            // ALL и ALL_EXCEPT_SELECTED: свой пакет напрямую, иначе ciadpi-сокеты зашли бы в TUN (рекурсия).
+
+        // Единый allowlist: «только выбранные» из split-tunnel + per-app список «В туннель».
+        val included = LinkedHashSet<String>()
+        if (split.mode == SplitTunnelMode.ONLY_SELECTED) {
+            included += split.packageNames.filter { it.isNotBlank() }
+        }
+        included += includedApps.filter { it.isNotBlank() }
+        val allow = included - OWN_PACKAGE
+
+        // Пока allowlist непуст, приложение само не в allowlist → его трафик идёт напрямую,
+        // и добавлять себя в ExcludedApplications нельзя (иначе Android получит и allow, и deny).
+        if (allow.isEmpty() && split.mode != SplitTunnelMode.ONLY_SELECTED) {
             excluded += OWN_PACKAGE
         }
 
@@ -47,17 +57,13 @@ object DpiConfig {
             if (excluded.isNotEmpty()) {
                 appendLine("ExcludedApplications = ${excluded.joinToString(", ")}")
             }
-            if (split.mode == SplitTunnelMode.ONLY_SELECTED) {
-                // Пользовательские "только выбранные": own пакет не добавляем в allowlist — интернет остаётся напрямую.
-                val included = split.packageNames.filter { it.isNotBlank() }
-                if (included.isNotEmpty()) {
-                    appendLine("IncludedApplications = ${included.joinToString(", ")}")
-                }
+            if (allow.isNotEmpty()) {
+                appendLine("IncludedApplications = ${allow.joinToString(", ")}")
             }
             appendLine()
             appendLine("[Peer]")
             appendLine("PublicKey = $DUMMY_KEY")
-            appendLine("AllowedIPs = ${allowedIpsOverride ?: "0.0.0.0/0"}")
+            appendLine("AllowedIPs = 0.0.0.0/0")
         }
     }
 }
