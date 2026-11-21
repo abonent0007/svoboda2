@@ -24,7 +24,6 @@ object DpiConfig {
     fun build(
         prefs: Prefs,
         split: SplitTunnelConfig,
-        serviceScope: Set<String> = emptySet(),
         allowedIpsOverride: String? = null,
     ): String {
         val mtu = prefs.tunnelMtu.coerceIn(1200, 1480)

@@ -583,6 +583,8 @@ private fun DrawerContent(
         val scope = rememberCoroutineScope()
         val initialSplit = remember(splitProfileId) { AppGraph.splitManager.resolve(splitProfileId) }
         var splitMode by remember(splitProfileId) { mutableStateOf(initialSplit.mode) }
+        var presetDialog by remember { mutableStateOf(false) }
+        var presetRollback by remember { mutableStateOf<svoboda.runet.abonent0007.split.SplitTunnelConfig?>(null) }
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -712,17 +714,69 @@ private fun DrawerContent(
             title = "Пресет: Российские приложения",
             value = "исключить из VPN",
             opaque = true,
-            onClick = {
-                val cfg = AppGraph.splitManager.resolve(splitProfileId).copy(
-                    mode = SplitTunnelMode.ALL_EXCEPT_SELECTED,
-                    packageNames = SplitTunnelPresets.russianApps.packages,
-                    presetId = SplitTunnelPresets.russianApps.id,
-                )
-                splitMode = SplitTunnelMode.ALL_EXCEPT_SELECTED
-                AppGraph.splitManager.update(splitProfileId, cfg)
-                if (AppGraph.vpn.isConnected) scope.launch { AppGraph.reconnect.userConnect(false) }
-            },
+            onClick = { presetDialog = true },
         )
+
+        if (presetDialog) {
+            val current = AppGraph.splitManager.resolve(splitProfileId)
+            val preset = SplitTunnelPresets.russianApps.packages
+            val toAdd = preset - current.packageNames
+            val toRemove = current.packageNames - preset
+            AlertDialog(
+                onDismissRequest = { presetDialog = false },
+                title = { Text("Пресет: Российские приложения") },
+                text = {
+                    Text(
+                        "Текущий список: ${current.packageNames.size} пакетов.\n" +
+                            "Пресет: ${preset.size} пакетов.\n" +
+                            "Добавится: ${toAdd.size} · удалится: ${toRemove.size}.\n\n" +
+                            "«Объединить» — добавить пресет к вашему списку (ваши пакеты сохраняются).\n" +
+                            "«Заменить» — полностью перезаписать список пресетом.",
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        val base = AppGraph.splitManager.resolve(splitProfileId)
+                        presetRollback = base
+                        val merged = base.packageNames + preset
+                        val cfg = base.copy(
+                            mode = if (merged.isEmpty()) SplitTunnelMode.ALL else SplitTunnelMode.ALL_EXCEPT_SELECTED,
+                            packageNames = merged,
+                            presetId = SplitTunnelPresets.russianApps.id,
+                        )
+                        splitMode = cfg.mode
+                        AppGraph.splitManager.update(splitProfileId, cfg)
+                        if (AppGraph.vpn.isConnected) scope.launch { AppGraph.reconnect.userConnect(false) }
+                        presetDialog = false
+                    }) { Text("ОБЪЕДИНИТЬ") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        val base = AppGraph.splitManager.resolve(splitProfileId)
+                        presetRollback = base
+                        val cfg = base.copy(
+                            mode = SplitTunnelMode.ALL_EXCEPT_SELECTED,
+                            packageNames = preset,
+                            presetId = SplitTunnelPresets.russianApps.id,
+                        )
+                        splitMode = cfg.mode
+                        AppGraph.splitManager.update(splitProfileId, cfg)
+                        if (AppGraph.vpn.isConnected) scope.launch { AppGraph.reconnect.userConnect(false) }
+                        presetDialog = false
+                    }) { Text("ЗАМЕНИТЬ") }
+                },
+            )
+        }
+
+        if (presetRollback != null) {
+            TextButton(onClick = {
+                val base = presetRollback ?: return@TextButton
+                presetRollback = null
+                splitMode = base.mode
+                AppGraph.splitManager.update(splitProfileId, base)
+                if (AppGraph.vpn.isConnected) scope.launch { AppGraph.reconnect.userConnect(false) }
+            }) { Text("ОТМЕНИТЬ ПРЕСЕТ", color = AccentGreen) }
+        }
 
         SectionHeader("СЕТЬ")
 

@@ -1,5 +1,9 @@
 package svoboda.runet.abonent0007.net
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -21,26 +25,63 @@ object NetProbe {
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    /** IP и код страны через Cloudflare trace (ip=, loc=). */
+    /**
+     * VPN-сеть приложения (tun). null — туннель не поднят.
+     * Пробы, привязанные к этой сети, идут через TUN, даже если само приложение
+     * исключено из VPN (addDisallowedApplication) — иначе проверка ушла бы напрямую.
+     */
+    fun vpnNetwork(context: Context): Network? {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
+        return runCatching {
+            cm.allNetworks.firstOrNull { net ->
+                cm.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            }
+        }.getOrNull()
+    }
+
+    private fun parseTrace(response: okhttp3.Response): ExitInfo? {
+        if (!response.isSuccessful) return null
+        val body = response.body?.string().orEmpty()
+        var ip = ""
+        var loc = ""
+        body.lineSequence().forEach { line ->
+            when {
+                line.startsWith("ip=") -> ip = line.substringAfter("ip=").trim()
+                line.startsWith("loc=") -> loc = line.substringAfter("loc=").trim()
+            }
+        }
+        return if (ip.isBlank()) null else ExitInfo(ip, loc)
+    }
+
+    /** IP и код страны через Cloudflare trace (ip=, loc=). Прямой путь (может идти мимо туннеля). */
     suspend fun fetchExit(): ExitInfo? = withContext(Dispatchers.IO) {
         runCatching {
             val request = Request.Builder()
                 .url("https://www.cloudflare.com/cdn-cgi/trace")
                 .header("User-Agent", "Svoboda2-Android")
                 .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching null
-                val body = response.body?.string().orEmpty()
-                var ip = ""
-                var loc = ""
-                body.lineSequence().forEach { line ->
-                    when {
-                        line.startsWith("ip=") -> ip = line.substringAfter("ip=").trim()
-                        line.startsWith("loc=") -> loc = line.substringAfter("loc=").trim()
-                    }
-                }
-                if (ip.isBlank()) null else ExitInfo(ip, loc)
-            }
+            client.newCall(request).execute().use { parseTrace(it) }
+        }.getOrNull()
+    }
+
+    /**
+     * Честное доказательство data-plane: HTTPS через VPN-сеть (tun).
+     * Резолвинг имени и TLS идут по туннелю; null — туннель не поднят или путь не работает.
+     */
+    suspend fun fetchExitBound(context: Context): ExitInfo? = withContext(Dispatchers.IO) {
+        val net = vpnNetwork(context) ?: return@withContext null
+        val bound = OkHttpClient.Builder()
+            .socketFactory(net.socketFactory)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
+            .build()
+        runCatching {
+            val request = Request.Builder()
+                .url("https://www.cloudflare.com/cdn-cgi/trace")
+                .header("User-Agent", "Svoboda2-Android")
+                .build()
+            bound.newCall(request).execute().use { parseTrace(it) }
         }.getOrNull()
     }
 
@@ -53,6 +94,28 @@ object NetProbe {
         val started = System.nanoTime()
         runCatching {
             Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), timeoutMs)
+                val elapsed = (System.nanoTime() - started) / 1_000_000
+                elapsed.toInt().coerceAtLeast(0)
+            }
+        }.getOrDefault(-1)
+    }
+
+    /**
+     * TCP-пинг через VPN-сеть (tun). -1, если туннеля нет или путь не работает.
+     * Используется для графика задержки, чтобы не показывать прямой (мимо туннеля) пинг.
+     */
+    suspend fun tcpPingBound(
+        context: Context,
+        host: String = "1.1.1.1",
+        port: Int = 443,
+        timeoutMs: Int = 2_000,
+    ): Int = withContext(Dispatchers.IO) {
+        val net = vpnNetwork(context) ?: return@withContext -1
+        val started = System.nanoTime()
+        runCatching {
+            Socket().use { socket ->
+                net.bindSocket(socket)
                 socket.connect(InetSocketAddress(host, port), timeoutMs)
                 val elapsed = (System.nanoTime() - started) / 1_000_000
                 elapsed.toInt().coerceAtLeast(0)

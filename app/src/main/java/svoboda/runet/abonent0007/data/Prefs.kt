@@ -90,9 +90,11 @@ class Prefs(context: Context) {
     /**
      * Автообновление: при старте проверять GitHub Releases, скачивать APK
      * и передавать его системному установщику.
+     * По умолчанию ВЫКЛ: репозиторий приватный, releases/latest недоступен (404),
+     * включать осознанно, когда появится публичный канал обновлений.
      */
     var autoUpdateEnabled: Boolean
-        get() = prefs.getBoolean("auto_update_enabled", true)
+        get() = prefs.getBoolean("auto_update_enabled", false)
         set(value) = prefs.edit().putBoolean("auto_update_enabled", value).apply()
 
     /** Выбранная стратегия ByeDPI (BDP-00 — эталон). */
@@ -122,11 +124,6 @@ class Prefs(context: Context) {
         val ts = parts.getOrNull(1)?.toLongOrNull() ?: return Long.MAX_VALUE
         return (System.currentTimeMillis() - ts) / (24L * 60L * 60L * 1000L)
     }
-
-    /** Предыдущая пользовательская DPI-стратегия (для отката). */
-    var dpiCustomStrategyPrev: String
-        get() = prefs.getString("dpi_custom_strategy_prev", "") ?: ""
-        set(value) = prefs.edit().putString("dpi_custom_strategy_prev", value).apply()
 
     /** Число попыток на домен в бенчмарке: 3 — скрининг, 10 — валидация, 20 — финал. */
     var dpiBenchmarkAttempts: Int
@@ -194,13 +191,4 @@ class Prefs(context: Context) {
         get() = prefs.getString("dpi_custom_strategy", "").orEmpty()
         set(value) = prefs.edit().putString("dpi_custom_strategy", value).apply()
 
-    /** AUTO: предпочитать WARP (иначе AWG). */
-    var autoPreferWarp: Boolean
-        get() = prefs.getBoolean("auto_prefer_warp", false)
-        set(value) = prefs.edit().putBoolean("auto_prefer_warp", value).apply()
-
-    /** AUTO: переключаться на резервный транспорт при отказе. */
-    var autoFallback: Boolean
-        get() = prefs.getBoolean("auto_fallback", true)
-        set(value) = prefs.edit().putBoolean("auto_fallback", value).apply()
 }

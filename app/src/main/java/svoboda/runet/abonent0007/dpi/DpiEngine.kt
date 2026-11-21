@@ -149,7 +149,7 @@ class DpiEngine(
         val split = splitManager.resolve(vpn.currentProfileId.ifBlank { "warp" })
         val scope = prefs.tunnelServiceScope
         val allowedIps = ServiceIpRanges.allowedIps(context, scope)
-        val config = DpiConfig.build(prefs, split, scope, allowedIps)
+        val config = DpiConfig.build(prefs, split, allowedIpsOverride = allowedIps)
         val ok = vpn.connectDpi(config)
         if (!ok) {
             Log.e(TAG, "DPI engine: TUN bring-up failed")

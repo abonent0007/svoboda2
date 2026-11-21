@@ -152,7 +152,9 @@ class ReconnectCoordinator(
             VpnLog.i("checkTunnel session=$sessionId result=unhealthy reason=handshake_not_ready handshake=$hs")
             return@runBlocking false
         }
-        val exit = NetProbe.fetchExit()
+        // Проба обязана идти через TUN: приложение исключено из VPN, поэтому прямой
+        // fetchExit() измерял бы мимо туннеля (ложный healthy).
+        val exit = NetProbe.fetchExitBound(context)
         val ok = exit != null
         VpnLog.i("checkTunnel session=$sessionId handshake=$hs result=${if (ok) "healthy" else "unhealthy"} exit=${exit?.ip}")
         ok

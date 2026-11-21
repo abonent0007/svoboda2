@@ -17,14 +17,12 @@ import java.net.Socket
  */
 object TelegramDc {
 
-    val DC_IPS: List<String> = listOf(
-        "149.154.167.50",
-        "149.154.167.51",
-        "149.154.175.50",
-        "91.108.56.130",
-        "91.108.4.130",
-        "91.108.8.130",
-    )
+    /**
+     * @deprecated Используйте [svoboda.runet.abonent0007.config.RemoteConfig.telegramDcs]
+     * (remote API + дисковый кэш + вшитый embedded fallback — тот же список).
+     * Константа оставлена для совместимости вызовов.
+     */
+    val DC_IPS: List<String> = svoboda.runet.abonent0007.config.RemoteBundle.EMBEDDED_TELEGRAM_DCS
 
     data class Status(val reachable: Boolean, val reachableIps: List<String>, val error: String?)
 
@@ -41,7 +39,9 @@ object TelegramDc {
         val ok = mutableListOf<String>()
         var lastError: String? = null
         val client = svoboda.runet.abonent0007.dpi.benchmark.Socks5Client(port = socksPort)
-        for (ip in DC_IPS) {
+        val dcs = runCatching { svoboda.runet.abonent0007.config.RemoteConfig.telegramDcs() }
+            .getOrDefault(DC_IPS)
+        for (ip in dcs) {
             val reachable = try {
                 if (viaSocks) {
                     client.connectIp(ip, 443).socket.close()

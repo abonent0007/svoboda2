@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.amnezia.awg.crypto.KeyPair
 import org.json.JSONObject
+import svoboda.runet.abonent0007.config.RemoteConfig
 import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
@@ -22,6 +23,11 @@ import java.util.concurrent.TimeUnit
 object WarpGenerator {
 
     const val REG_URL = "https://api.cloudflareclient.com/v0a2158/reg"
+    /**
+     * @deprecated Используйте [svoboda.runet.abonent0007.config.RemoteConfig.cfClientVersion]
+     * (remote API + дисковый кэш + этот же embedded fallback). Константа оставлена как
+     * источник embedded-дефолта для вшитой версии без сети.
+     */
     const val CF_CLIENT_VERSION = "a-6.30-3596"
     const val MTU = 1420
 
@@ -110,7 +116,8 @@ object WarpGenerator {
                 .url(REG_URL)
                 .header("Content-Type", "application/json")
                 .header("User-Agent", "okhttp/3.12.1")
-                .header("CF-Client-Version", CF_CLIENT_VERSION)
+                // CF-Client-Version — внешняя конфигурация (RemoteConfig: remote → кэш → embedded)
+                .header("CF-Client-Version", RemoteConfig.cfClientVersion())
                 .post(body)
                 .build()
 

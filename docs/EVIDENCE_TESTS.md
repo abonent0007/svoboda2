@@ -20,7 +20,7 @@
 - DPI — Socks подтвердил: HTTPS через `--socks5-hostname 127.0.0.1:1080` → 200;
   на Wi-Fi «DurDom2» без интернета — падение (это сеть, не приложение).
 - AWG seed — НЕ ПРОХОДИТ на этой SIM (60 с → таймаут → fallback в AUTO к следующему
-  кандидату). Не приложения, а ограничение SIM/сети, публичные профили nl2/nl3 удалены как NXDOMAIN.
+  кандидату). Особенность SIM/сети, публичные профили nl2/nl3 удалены как NXDOMAIN.
 - AUTO после исправлений — работает, журнал `files/auto_log.txt`: `18:07:27 AUTO start; order=AWG,WARP,DPI`
   → пытаетесь AWG → WARP → public → выбор `candidate #7 selected: public:any_1`;
   больше не зависает на мёртвых NXDOMAIN.

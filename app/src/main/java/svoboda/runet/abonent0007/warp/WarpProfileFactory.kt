@@ -58,7 +58,6 @@ object WarpProfileFactory {
         identity: WarpIdentity?,
         seedRawConfig: String,
         dns: String = WarpGenerator.DNS_CLOUDFLARE,
-        serviceScope: Set<String> = emptySet(),
         allowedIpsOverride: String? = null,
         random: Random = Random.Default,
     ): Result = withContext(Dispatchers.IO) {

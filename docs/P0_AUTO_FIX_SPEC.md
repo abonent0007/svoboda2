@@ -49,8 +49,7 @@
 | AWG / WARP / публичные (incl. AUTO-ветка) | 2 независимых HTTPS GET через **data-plane самого транспорта** (собственный пакет → tun0; own пакет НЕ исключён — проверено): (1) `https://1.1.1.1/cdn-cgi/trace`, (2) `https://www.gstatic.com/generate_204` (ожид. 204); таймаут 5 с; 200/204 = OK |
 | DPI (`DPI_DIRECT`/`DPI`) | Проба через локальный SOCKS5 (`fetchExitViaSocks` / `socksPing`, ciadpi): `https://www.cloudflare.com/cdn-cgi/trace` через `127.0.0.1:<dpiSocksPort>` |
 
-Использовать существующий `NetProbe` (расширить его методами validateDataPlane(via: TransportKind)); НЕ использовать
-VpnService.protect() и НЕ привязывать сокет к физической сети (этим нельзя «проверять» туннель).
+Использовать существующий `NetProbe` (расширить его методами `validateDataPlane(via: TransportKind)`); `VpnService.protect()` и привязка сокета к физической сети не проверяют туннель.
 
 Этапы кандидатного цикла (перебор):
 ```

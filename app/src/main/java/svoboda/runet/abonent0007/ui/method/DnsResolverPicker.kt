@@ -87,19 +87,26 @@ fun DnsResolverPanel(
                         )
                     }
                 }
-                TextButton(onClick = {
-                    scope.launch {
-                        checking.value = def.id
-                        checks[def.id] = DnsResolvers.check(def)
-                        checking.value = null
-                    }
-                }) { Text("ПРОВЕРИТЬ", fontSize = 11.sp) }
-                TextButton(onClick = {
-                    scope.launch {
-                        val ips = DnsResolvers.runCatchingAddresses(def)
-                        if (ips.isNotBlank()) onApply(ips)
-                    }
-                }) { Text("ВЫБРАТЬ", fontSize = 11.sp, color = AccentGreen) }
+                ActionChip(
+                    text = "ПРОВЕРИТЬ",
+                    onClick = {
+                        scope.launch {
+                            checking.value = def.id
+                            checks[def.id] = DnsResolvers.check(def)
+                            checking.value = null
+                        }
+                    },
+                )
+                ActionChip(
+                    text = "ВЫБРАТЬ",
+                    selected = true,
+                    onClick = {
+                        scope.launch {
+                            val ips = DnsResolvers.runCatchingAddresses(def)
+                            if (ips.isNotBlank()) onApply(ips)
+                        }
+                    },
+                )
             }
         }
 
@@ -132,17 +139,24 @@ fun DnsResolverPanel(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = {
-                scope.launch {
-                    customCheck = DnsResolvers.checkCustom(custom)
-                }
-            }) { Text("ПРОВЕРИТЬ", fontSize = 11.sp) }
-            TextButton(onClick = {
-                scope.launch {
-                    val ips = DnsResolvers.runCatchingAddressesCustom(custom)
-                    if (ips.isNotEmpty()) onApply(ips)
-                }
-            }) { Text("ПРИМЕНИТЬ", fontSize = 11.sp, color = AccentGreen) }
+            ActionChip(
+                text = "ПРОВЕРИТЬ",
+                onClick = {
+                    scope.launch {
+                        customCheck = DnsResolvers.checkCustom(custom)
+                    }
+                },
+            )
+            ActionChip(
+                text = "ПРИМЕНИТЬ",
+                selected = true,
+                onClick = {
+                    scope.launch {
+                        val ips = DnsResolvers.runCatchingAddressesCustom(custom)
+                        if (ips.isNotEmpty()) onApply(ips)
+                    }
+                },
+            )
         }
         Text(
             text = "Антиблок-резолверы возвращают адреса, рассчитанные на обход блокировок: " +

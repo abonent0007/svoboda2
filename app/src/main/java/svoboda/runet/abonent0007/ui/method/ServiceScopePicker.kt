@@ -52,24 +52,25 @@ fun ServiceScopePicker(title: String = "СЕРВИСЫ В ТУННЕЛЬ") {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 rowServices.forEach { service ->
                     val selected = scope.contains(service.id)
-                    TextButton(onClick = {
-                        scope = if (selected) scope - service.id else scope + service.id
-                        prefs.tunnelServiceScope = scope
-                    }) {
-                        Text(
-                            text = service.title,
-                            fontSize = 12.sp,
-                            color = if (selected) AccentGreen else TextSecondary,
-                        )
-                    }
+                    ActionChip(
+                        text = service.title,
+                        selected = selected,
+                        onClick = {
+                            scope = if (selected) scope - service.id else scope + service.id
+                            prefs.tunnelServiceScope = scope
+                        },
+                    )
                 }
             }
         }
         if (scope.isNotEmpty()) {
-            TextButton(onClick = {
-                scope = emptySet()
-                prefs.tunnelServiceScope = scope
-            }) { Text("СБРОСИТЬ ВЫБОР", fontSize = 12.sp) }
+            ActionChip(
+                text = "СБРОСИТЬ ВЫБОР",
+                onClick = {
+                    scope = emptySet()
+                    prefs.tunnelServiceScope = scope
+                },
+            )
         }
     }
 }

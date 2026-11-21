@@ -121,7 +121,8 @@ class VpnController(
         monitorJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 if ((_phase.value == VpnPhase.CONNECTED || _phase.value == VpnPhase.DEGRADED) && prefs.pingGraphEnabled) {
-                    val ping = dpiProbePort?.let { NetProbe.socksPing(it) } ?: NetProbe.tcpPing()
+                    val ping = dpiProbePort?.let { NetProbe.socksPing(it) }
+                        ?: NetProbe.tcpPingBound(appContext)
                     // NetProbe возвращает -1 при ошибке: не показываем «-1 мс» и не портим график.
                     _lastPing.value = ping.takeIf { it >= 0 }
                     if (ping >= 0) {
@@ -376,12 +377,15 @@ class VpnController(
         stateRepo?.setTransport(TunnelTransportPhase.CLOSED)
     }
 
-    /** Кнопка «Проверить связь»: IP/страна + три пинга. */
+    /** Кнопка «Проверить связь»: честный HTTPS-выход через туннель + пинги через туннель. */
     suspend fun runTest() {
         _testResult.value = "Проверка…"
         val port = dpiProbePort
-        val exit = port?.let { NetProbe.fetchExitViaSocks(it) } ?: NetProbe.fetchExit()
-        val pings = (1..3).map { port?.let { NetProbe.socksPing(it) } ?: NetProbe.tcpPing() }
+        // DPI — через локальный SOCKS (он и есть туннель); остальное — через VPN-сеть (tun).
+        val exit = port?.let { NetProbe.fetchExitViaSocks(it) } ?: NetProbe.fetchExitBound(appContext)
+        val pings = (1..3).map {
+            port?.let { p -> NetProbe.socksPing(p) } ?: NetProbe.tcpPingBound(appContext)
+        }
         val ok = pings.filter { it >= 0 }
         _testResult.value = buildString {
             if (exit != null) {
@@ -389,8 +393,9 @@ class VpnController(
                 if (exit.country.isNotBlank()) {
                     append(" · ${NetProbe.countryLabel(exit.country)}")
                 }
+                append(" · HTTPS через туннель: ок")
             } else {
-                append("IP недоступен")
+                append("IP недоступен · HTTPS через туннель: не работает")
             }
             if (ok.isNotEmpty()) {
                 append(" · ping ${ok.min()}/${ok.sum() / ok.size}/${ok.max()} мс")

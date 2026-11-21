@@ -129,9 +129,11 @@ fun MethodSettingsDialog(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                    Text("ЗАКРЫТЬ", color = TextSecondary)
-                }
+                ActionChip(
+                    text = "ЗАКРЫТЬ",
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
                 if (showBenchmark) {
                     DpiBenchmarkDialog(onDismiss = { showBenchmark = false })
@@ -353,23 +355,20 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             rowServers.forEach { server ->
                 val country = publicCountries[server.id]
-                TextButton(onClick = {
-                    scope.launch {
-                        status = "Подключение ${server.host}:${server.port} …"
-                        val ok = AppGraph.manager.connectPublicServer(server.id)
-                        status = if (ok) {
-                            "Подключено: ${server.title}"
-                        } else {
-                            "Не удалось подключить ${server.host}"
+                ActionChip(
+                    text = server.title + (country?.let { " · $it" } ?: ""),
+                    onClick = {
+                        scope.launch {
+                            status = "Подключение ${server.host}:${server.port} …"
+                            val ok = AppGraph.manager.connectPublicServer(server.id)
+                            status = if (ok) {
+                                "Подключено: ${server.title}"
+                            } else {
+                                "Не удалось подключить ${server.host}"
+                            }
                         }
-                    }
-                }) {
-                    Text(
-                        text = server.title + (country?.let { " · $it" } ?: ""),
-                        fontSize = 11.sp,
-                        color = AccentGreen,
-                    )
-                }
+                    },
+                )
             }
         }
     }
@@ -403,16 +402,14 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             rowServices.forEach { service ->
                 val selected = directServices.contains(service.id)
-                TextButton(onClick = {
-                    directServices = if (selected) directServices - service.id else directServices + service.id
-                    AppGraph.prefs.serviceDirectSelection = directServices
-                }) {
-                    Text(
-                        text = service.title,
-                        fontSize = 12.sp,
-                        color = if (selected) AccentGreen else TextSecondary,
-                    )
-                }
+                ActionChip(
+                    text = service.title,
+                    selected = selected,
+                    onClick = {
+                        directServices = if (selected) directServices - service.id else directServices + service.id
+                        AppGraph.prefs.serviceDirectSelection = directServices
+                    },
+                )
             }
         }
     }
@@ -431,13 +428,11 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
     )
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf(5, 10, 25).forEach { n ->
-            TextButton(onClick = { profileCount = n }) {
-                Text(
-                    text = "$n",
-                    color = if (profileCount == n) AccentGreen else TextSecondary,
-                    fontSize = 12.sp,
-                )
-            }
+            ActionChip(
+                text = "$n",
+                selected = profileCount == n,
+                onClick = { profileCount = n },
+            )
         }
     }
     TileRow(
@@ -488,29 +483,38 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
                 fontSize = 12.sp,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = {
-                    scope.launch {
-                        profileStatus = "Подключение ${profile.host}:${profile.port} …"
-                        val ok = AppGraph.manager.connectGeneratedProfile(profile)
-                        status = if (ok) {
-                            "Подключено: ${profile.host}:${profile.port}"
-                        } else {
-                            "Не удалось подключить ${profile.host}:${profile.port}"
+                ActionChip(
+                    text = "ПОДКЛЮЧИТЬ",
+                    onClick = {
+                        scope.launch {
+                            profileStatus = "Подключение ${profile.host}:${profile.port} …"
+                            val ok = AppGraph.manager.connectGeneratedProfile(profile)
+                            status = if (ok) {
+                                "Подключено: ${profile.host}:${profile.port}"
+                            } else {
+                                "Не удалось подключить ${profile.host}:${profile.port}"
+                            }
                         }
-                    }
-                }) { Text("ПОДКЛЮЧИТЬ", fontSize = 12.sp, color = AccentGreen) }
-                TextButton(onClick = {
-                    AppGraph.manager.removeGeneratedProfile(profile)
-                    profiles = AppGraph.manager.generatedProfiles()
-                }) { Text("УДАЛИТЬ", fontSize = 12.sp) }
+                    },
+                )
+                ActionChip(
+                    text = "УДАЛИТЬ",
+                    onClick = {
+                        AppGraph.manager.removeGeneratedProfile(profile)
+                        profiles = AppGraph.manager.generatedProfiles()
+                    },
+                )
             }
         }
     }
     if (profiles.isNotEmpty()) {
-        TextButton(onClick = {
-            AppGraph.manager.clearGeneratedProfiles()
-            profiles = AppGraph.manager.generatedProfiles()
-        }) { Text("УДАЛИТЬ ВСЕ ПРОФИЛИ", fontSize = 12.sp) }
+        ActionChip(
+            text = "УДАЛИТЬ ВСЕ ПРОФИЛИ",
+            onClick = {
+                AppGraph.manager.clearGeneratedProfiles()
+                profiles = AppGraph.manager.generatedProfiles()
+            },
+        )
     }
 }
 
@@ -731,26 +735,33 @@ private fun DpiSettings(onOpenBenchmark: () -> Unit = {}) {
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = {
-                customArgs = dpiStrategyById(strategyId)?.args.orEmpty()
-                customError = validateDpiArgs(customArgs)
-                customSaved = false
-            }) { Text("Копировать из каталога") }
-            TextButton(
+            ActionChip(
+                text = "Копировать из каталога",
+                onClick = {
+                    customArgs = dpiStrategyById(strategyId)?.args.orEmpty()
+                    customError = validateDpiArgs(customArgs)
+                    customSaved = false
+                },
+            )
+            ActionChip(
+                text = "Сохранить",
                 enabled = customError == null,
                 onClick = {
                     prefs.dpiCustomStrategy = customArgs.trim()
                     customSaved = true
                 },
-            ) { Text("Сохранить") }
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = {
-                customArgs = ""
-                prefs.dpiCustomStrategy = ""
-                customError = null
-                customSaved = false
-            }) { Text("Очистить") }
+            ActionChip(
+                text = "Очистить",
+                onClick = {
+                    customArgs = ""
+                    prefs.dpiCustomStrategy = ""
+                    customError = null
+                    customSaved = false
+                },
+            )
         }
         if (customSaved) {
             Text(
@@ -795,18 +806,16 @@ private fun AutoSettings() {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf("AWG" to "AWG", "WARP" to "WARP", "DPI" to "DPI").forEach { (id, title) ->
             val active = transportOrder.split(',').any { it.trim().uppercase() == id }
-            TextButton(onClick = {
-                val current = transportOrder.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
-                val next = if (active) current - id else current + id
-                transportOrder = next.joinToString(",")
-                prefs.autoTransportOrder = transportOrder
-            }) {
-                Text(
-                    text = title,
-                    fontSize = 12.sp,
-                    color = if (active) AccentGreen else TextSecondary,
-                )
-            }
+            ActionChip(
+                text = title,
+                selected = active,
+                onClick = {
+                    val current = transportOrder.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+                    val next = if (active) current - id else current + id
+                    transportOrder = next.joinToString(",")
+                    prefs.autoTransportOrder = transportOrder
+                },
+            )
         }
     }
 
@@ -820,18 +829,16 @@ private fun AutoSettings() {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf("NL", "FI", "US").forEach { code ->
             val active = countryPriority.split(',').any { it.trim().uppercase() == code }
-            TextButton(onClick = {
-                val current = countryPriority.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
-                val next = if (active) current - code else current + code
-                countryPriority = next.joinToString(",")
-                prefs.autoCountryPriority = countryPriority
-            }) {
-                Text(
-                    text = code,
-                    fontSize = 12.sp,
-                    color = if (active) AccentGreen else TextSecondary,
-                )
-            }
+            ActionChip(
+                text = code,
+                selected = active,
+                onClick = {
+                    val current = countryPriority.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+                    val next = if (active) current - code else current + code
+                    countryPriority = next.joinToString(",")
+                    prefs.autoCountryPriority = countryPriority
+                },
+            )
         }
     }
 
@@ -885,20 +892,23 @@ private fun AutoSettings() {
             }
         },
     )
-    TextButton(onClick = {
-        scope.launch {
-            val viaSocks = prefs.connectionMethod == "DPI_DIRECT"
-            val status = svoboda.runet.abonent0007.net.TelegramDc.check(
-                viaSocks = viaSocks,
-                socksPort = prefs.dpiSocksPort,
-            )
-            dcStatus = if (status.reachable) {
-                "доступны (${status.reachableIps.firstOrNull()})"
-            } else {
-                "недоступны (${status.error ?: "нет ответа"}) — нужен AWG/WARP"
+    ActionChip(
+        text = "ПРОВЕРИТЬ DC",
+        onClick = {
+            scope.launch {
+                val viaSocks = prefs.connectionMethod == "DPI_DIRECT"
+                val status = svoboda.runet.abonent0007.net.TelegramDc.check(
+                    viaSocks = viaSocks,
+                    socksPort = prefs.dpiSocksPort,
+                )
+                dcStatus = if (status.reachable) {
+                    "доступны (${status.reachableIps.firstOrNull()})"
+                } else {
+                    "недоступны (${status.error ?: "нет ответа"}) — нужен AWG/WARP"
+                }
             }
-        }
-    }) { Text("ПРОВЕРИТЬ DC", fontSize = 12.sp) }
+        },
+    )
     Text(
         text = "Страна WARP = ближайший PoP Cloudflare и не гарантируется: у профилей измерение " +
             "фактической страны (после подключения), у своих AWG-серверов страна задаётся вами. " +
