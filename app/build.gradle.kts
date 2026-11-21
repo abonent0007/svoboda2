@@ -6,15 +6,15 @@
 }
 
 android {
-    namespace = "svoboda.runet.abonent0007"
+    namespace = "svoboda3.runet.abonent0007"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "svoboda.runet.abonent0007"
+        applicationId = "svoboda3.runet.abonent0007"
         minSdk = 26
         targetSdk = 35
-        versionCode = 209
-        versionName = "2.0.9"
+        versionCode = 300
+        versionName = "3.0.0"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
