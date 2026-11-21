@@ -212,4 +212,21 @@ class Prefs(context: Context) {
         const val DEFAULT_DNS_SERVERS =
             "45.155.204.190, 37.230.192.51, 159.194.200.33, 193.233.112.67, 193.233.112.88"
     }
+
+    /** true, если ключ присутствует (отличие «не задано» от «задано пустым»). */
+    fun contains(key: String): Boolean = prefs.contains(key)
+
+    /**
+     * Первый запуск: в глобальный direct-список попадают уже установленные российские
+     * приложения (банки/госуслуги/сервисы) — из коробки они идут напрямую.
+     * Вызывается до подключения (Application.onCreate). Не перетирает уже выбранное.
+     */
+    fun seedDefaultDirectApps(context: Context) {
+        if (contains("global_direct_apps")) return
+        val pm = context.packageManager
+        val installed = svoboda.runet.abonent0007.split.RussianDirectCatalog.allPackages.filter { pkg ->
+            runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
+        }
+        if (installed.isNotEmpty()) globalDirectApps = installed.toSet()
+    }
 }

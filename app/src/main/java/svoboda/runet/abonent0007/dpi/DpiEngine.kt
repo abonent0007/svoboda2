@@ -130,6 +130,26 @@ class DpiEngine(
         }
     }
 
+    /**
+     * Тест стратегии без туннеля: ciadpi поднимается отдельным процессом на время пробы.
+     * [probe] получает порт SOCKS и должна проверить ресурс через него.
+     * При активной DPI-сессии не используется (конфликт порта) — возвращает false.
+     */
+    suspend fun testStrategy(args: Array<String>, probe: suspend (Int) -> Boolean): Boolean {
+        if (started) {
+            Log.w(TAG, "testStrategy skipped: engine already started")
+            return false
+        }
+        val port = prefs.dpiSocksPort.coerceIn(1, 65535)
+        if (!startCiadpi(args)) return false
+        return try {
+            kotlinx.coroutines.delay(400)
+            probe(port)
+        } finally {
+            stopCiadpi()
+        }
+    }
+
     /** Полный цикл: ciadpi → TUN/HEV → SOCKS5-проба → CONNECTED (или DEGRADED при ошибке, туннель сохраняем). */
     suspend fun start(): Boolean = withContext(Dispatchers.IO) {
         if (started) {

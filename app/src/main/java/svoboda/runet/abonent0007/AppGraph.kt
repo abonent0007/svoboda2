@@ -42,6 +42,7 @@ class SvobodaApp : Application() {
         super.onCreate()
         AppGraph.appContext = this
         AppGraph.prefs = Prefs(this)
+        AppGraph.prefs.seedDefaultDirectApps(this)
         AppGraph.connectionState = ConnectionStateRepository()
         AppGraph.vpn = VpnController(this, AppGraph.prefs, AppGraph.connectionState)
         AppGraph.seeds = SeedCatalog.load(this)

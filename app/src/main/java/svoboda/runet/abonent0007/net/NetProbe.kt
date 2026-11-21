@@ -162,6 +162,20 @@ object NetProbe {
         ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(0)
     }
 
+    /**
+     * Достижим ли конкретный https-ресурс через локальный SOCKS5 (ciadpi).
+     * true = получен любой HTTP-ответ (даже 4xx/5xx): домен не отваливается по таймауту.
+     */
+    suspend fun probeViaSocks(port: Int, url: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Svoboda2-Android")
+                .build()
+            socksClient(port).newCall(request).execute().use { resp -> resp.code in 200..599 }
+        }.getOrDefault(false)
+    }
+
     fun countryLabel(code: String): String {
         if (code.isBlank()) return ""
         val name = Locale("", code.uppercase(Locale.US)).displayCountry

@@ -591,7 +591,11 @@ private fun DpiCard(content: @Composable () -> Unit) {
 @Composable
 private fun DpiSettings(onOpenBenchmark: () -> Unit = {}) {
     val prefs = AppGraph.prefs
+    val scope = rememberCoroutineScope()
     var strategyId by remember { mutableStateOf(prefs.dpiStrategyId) }
+    var ytDialog by remember { mutableStateOf(false) }
+    var ytProgress by remember { mutableStateOf<String?>(null) }
+    var ytResult by remember { mutableStateOf<String?>(null) }
     var port by remember { mutableStateOf(prefs.dpiSocksPort.toString()) }
     var splitCount by remember { mutableStateOf(8) }
     var disorder by remember { mutableStateOf(true) }
@@ -646,6 +650,56 @@ private fun DpiSettings(onOpenBenchmark: () -> Unit = {}) {
             prefs.dpiTunnelApps = it
         },
     )
+
+    TileRow(
+        title = "Подобрать стратегию для YouTube",
+        value = ytProgress ?: ytResult ?: "авто-подбор из каталога (без туннеля)",
+        opaque = true,
+        onClick = { ytDialog = true },
+    )
+    if (ytDialog) {
+        val connected = AppGraph.vpn.isConnected
+        AlertDialog(
+            onDismissRequest = { if (ytProgress == null) ytDialog = false },
+            title = { Text("Стратегия для YouTube / Google-видео") },
+            text = {
+                Text(
+                    when {
+                        connected && ytProgress == null ->
+                            "Сейчас DPI подключён: перебор требует отдельного процесса ciadpi и конфликтует с активной сессией. Отключитесь (ОТКЛЮЧИТЬ) или подберите позже."
+                        ytProgress != null -> "Перебор стратегий… ${ytProgress}"
+                        ytResult != null -> ytResult ?: ""
+                        else ->
+                            "Проверяем стратегии каталога на цели YouTube, без подключения туннеля " +
+                                "(отдельный процесс ciadpi). Может занять до нескольких минут."
+                    },
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !connected,
+                    onClick = {
+                        ytResult = null
+                        scope.launch {
+                            val id = svoboda.runet.abonent0007.dpi.DpiStrategyAutoSelect.pick(AppGraph.dpi) { p ->
+                                ytProgress = "${p.index}/${p.total} ${p.id}"
+                            }
+                            ytProgress = null
+                            if (id != null) {
+                                prefs.dpiStrategyId = id
+                                strategyId = id
+                                ytResult = "Подобрано: $id. Применится при следующем подключении."
+                            } else {
+                                ytResult = "Рабочая стратегия не найдена — текущая остаётся."
+                            }
+                        }
+                    },
+                ) { Text(if (ytResult == null) "ПОДОБРАТЬ" else "ЗАКРЫТЬ") }
+            },
+        )
+    }
 
     SectionTitle("СТРАТЕГИИ")
     DpiComment(DPI_COMMENT_CATALOG)
