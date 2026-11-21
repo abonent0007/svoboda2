@@ -18,23 +18,24 @@ class Prefs(context: Context) {
         get() = prefs.getInt("ping_interval_ms", 2_000).coerceIn(1_000, 10_000)
         set(value) = prefs.edit().putInt("ping_interval_ms", value.coerceIn(1_000, 10_000)).apply()
 
+    /** Автоподключение при запуске (рабочая конфигурация по умолчанию — проверено на RMX3370). */
     var autoConnect: Boolean
-        get() = prefs.getBoolean("auto_connect", false)
+        get() = prefs.getBoolean("auto_connect", true)
         set(value) = prefs.edit().putBoolean("auto_connect", value).apply()
 
-    /** MTU туннеля (1200..1480), по умолчанию 1420. */
+    /** MTU туннеля (1200..1480), по умолчанию 1440 (рабочая конфигурация). */
     var tunnelMtu: Int
-        get() = prefs.getInt("tunnel_mtu", 1420).coerceIn(1_200, 1_480)
+        get() = prefs.getInt("tunnel_mtu", 1440).coerceIn(1_200, 1_480)
         set(value) = prefs.edit().putInt("tunnel_mtu", value.coerceIn(1_200, 1_480)).apply()
 
-    /** Включить IPv6 через туннель (по умолчанию выкл). */
+    /** IPv6 через туннель (в рабочей конфигурации включён). */
     var ipv6Enabled: Boolean
-        get() = prefs.getBoolean("ipv6_enabled", false)
+        get() = prefs.getBoolean("ipv6_enabled", true)
         set(value) = prefs.edit().putBoolean("ipv6_enabled", value).apply()
 
     /** DNS-серверы через запятую; пусто — оставить из конфига. */
     var dnsServers: String
-        get() = prefs.getString("dns_servers", "").orEmpty()
+        get() = prefs.getString("dns_servers", DEFAULT_DNS_SERVERS).orEmpty()
         set(value) = prefs.edit().putString("dns_servers", value.trim()).apply()
 
     /** Последний удачный конфиг — для автопереподключения (хранится зашифрованным). */
@@ -81,10 +82,10 @@ class Prefs(context: Context) {
 
     /**
      * Выбранный способ подключения: AWG | WARP | DPI_DIRECT | AUTO.
-     * Хранится как имя enum ConnectionMethod; неизвестное значение → AWG.
+     * Хранится как имя enum ConnectionMethod; неизвестное значение → AUTO (рабочая конфигурация).
      */
     var connectionMethod: String
-        get() = prefs.getString("connection_method", "AWG").orEmpty()
+        get() = prefs.getString("connection_method", "AUTO").orEmpty()
         set(value) = prefs.edit().putString("connection_method", value).apply()
 
     /**
@@ -96,9 +97,9 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("auto_update_enabled", true)
         set(value) = prefs.edit().putBoolean("auto_update_enabled", value).apply()
 
-    /** Выбранная стратегия ByeDPI (BDP-00 — эталон). */
+    /** Выбранная стратегия ByeDPI (по умолчанию dpi_x03 — рабочая конфигурация). */
     var dpiStrategyId: String
-        get() = prefs.getString("dpi_strategy_id", "BDP-00").orEmpty()
+        get() = prefs.getString("dpi_strategy_id", "dpi_x03").orEmpty()
         set(value) = prefs.edit().putString("dpi_strategy_id", value).apply()
 
     /** Порт локального SOCKS5 для DPI-движка. */
@@ -134,9 +135,9 @@ class Prefs(context: Context) {
         get() = prefs.getStringSet("dpi_benchmark_strategy_ids", emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet("dpi_benchmark_strategy_ids", value).apply()
 
-    /** DNS через туннель (HEV mapdns): домены резолвятся внутри обхода, соединения идут по домену. */
+    /** DNS через туннель (HEV mapdns): домены резолвятся внутри обхода. По умолчанию включён. */
     var dpiMapDns: Boolean
-        get() = prefs.getBoolean("dpi_map_dns", false)
+        get() = prefs.getBoolean("dpi_map_dns", true)
         set(value) = prefs.edit().putBoolean("dpi_map_dns", value).apply()
 
     /** Выбранные домены для бенчмарка DPI (сохраняются между запусками). */
@@ -145,9 +146,9 @@ class Prefs(context: Context) {
         get() = prefs.getStringSet("dpi_tunnel_apps", emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet("dpi_tunnel_apps", value).apply()
 
-    /** AUTO: приоритет стран выхода (ISO-коды через запятую). */
+    /** AUTO: приоритет стран выхода (ISO-коды через запятую). По умолчанию US (рабочая конфигурация). */
     var autoCountryPriority: String
-        get() = prefs.getString("auto_country_priority", "NL,FI,US") ?: "NL,FI,US"
+        get() = prefs.getString("auto_country_priority", "US") ?: "US"
         set(value) = prefs.edit().putString("auto_country_priority", value).apply()
 
     /** AUTO: порядок транспортов (AWG,WARP,DPI). */
@@ -155,14 +156,14 @@ class Prefs(context: Context) {
         get() = prefs.getString("auto_transport_order", "AWG,WARP,DPI") ?: "AWG,WARP,DPI"
         set(value) = prefs.edit().putString("auto_transport_order", value).apply()
 
-    /** AUTO: строгая политика страны (не уходить в другие страны) или предпочтительная. */
+    /** AUTO: строгая политика страны (не уходить в другие страны). По умолчанию включена. */
     var autoCountryStrict: Boolean
-        get() = prefs.getBoolean("auto_country_strict", false)
+        get() = prefs.getBoolean("auto_country_strict", true)
         set(value) = prefs.edit().putBoolean("auto_country_strict", value).apply()
 
-    /** AUTO: использовать встроенные публичные серверы (чужие операторы). По умолчанию выключено. */
+    /** AUTO: использовать встроенные публичные серверы (чужие операторы). По умолчанию включено. */
     var autoIncludePublicServers: Boolean
-        get() = prefs.getBoolean("auto_include_public_servers", false)
+        get() = prefs.getBoolean("auto_include_public_servers", true)
         set(value) = prefs.edit().putBoolean("auto_include_public_servers", value).apply()
 
     /** AUTO: если DC Telegram недоступны через DPI — выбирать AWG/WARP. */
@@ -188,10 +189,13 @@ class Prefs(context: Context) {
         get() = prefs.getStringSet("warp_tunnel_apps", emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet("warp_tunnel_apps", value).apply()
 
-    /** WARP: приложения мимо туннеля (denylist, пакеты). */
-    var warpDirectApps: Set<String>
-        get() = prefs.getStringSet("warp_direct_apps", emptySet()) ?: emptySet()
-        set(value) = prefs.edit().putStringSet("warp_direct_apps", value).apply()
+    /**
+     * Глобальный список приложений мимо VPN (denylist, пакеты).
+     * Один на все методы (AWG/WARP/DPI/AUTO) — редактируется из шторки и из настроек WARP.
+     */
+    var globalDirectApps: Set<String>
+        get() = prefs.getStringSet("global_direct_apps", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("global_direct_apps", value).apply()
 
     var dpiBenchmarkDomains: Set<String>
         get() = prefs.getStringSet("dpi_benchmark_domains", null)
@@ -203,4 +207,9 @@ class Prefs(context: Context) {
         get() = prefs.getString("dpi_custom_strategy", "").orEmpty()
         set(value) = prefs.edit().putString("dpi_custom_strategy", value).apply()
 
+    companion object {
+        /** Антиблок-резолверы (рабочая конфигурация по умолчанию, проверена на RMX3370). */
+        const val DEFAULT_DNS_SERVERS =
+            "45.155.204.190, 37.230.192.51, 159.194.200.33, 193.233.112.67, 193.233.112.88"
+    }
 }

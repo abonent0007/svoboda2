@@ -414,21 +414,21 @@ class ConnectionManager(
                 profileId = profileId,
                 mode = SplitTunnelMode.ALL_EXCEPT_SELECTED,
                 packageNames = direct,
-                presetId = "warp_direct_apps",
+                presetId = "global_direct_apps",
             )
             else -> null
         } ?: return
         AppGraph.splitManager.update(profileId, cfg)
     }
 
-    /** Миграция service_direct_selection (id сервисов) → пакеты warp_direct_apps. */
+    /** Глобальный direct-список (пакеты). Миграция: service_direct_selection (id сервисов) → пакеты. */
     private fun resolveWarpDirectPackages(): Set<String> {
-        val stored = prefs.warpDirectApps
+        val stored = prefs.globalDirectApps
         if (stored.isNotEmpty()) return stored
         val legacy = prefs.serviceDirectSelection
         if (legacy.isEmpty()) return emptySet()
         val pkgs = ServiceCatalog.packagesFor(AppGraph.appContext, legacy) + ServiceCatalog.fallbackPackages(legacy)
-        prefs.warpDirectApps = pkgs
+        prefs.globalDirectApps = pkgs
         return pkgs
     }
 

@@ -20,6 +20,7 @@ import org.amnezia.awg.backend.GoBackend
 import org.amnezia.awg.backend.Tunnel
 import org.amnezia.awg.config.Config
 import svoboda.runet.abonent0007.split.SplitTunnelManager
+import svoboda.runet.abonent0007.split.SplitTunnelMode
 import svoboda.runet.abonent0007.split.SplitTunnelStore
 import svoboda.runet.abonent0007.state.ConnectionStateRepository
 import svoboda.runet.abonent0007.state.TunnelTransportPhase
@@ -412,17 +413,44 @@ class VpnController(
     fun lastHandshake(): Long = runCatching { backend.getLastHandshake(tunnel) }.getOrDefault(-1L)
 
     /**
-     * Вставляет в [Interface] список приложений, идущих мимо VPN.
-     * VpnService.Builder.addDisallowedApplication применяется в GoBackend.
+     * Единая логика раздельного туннелирования для всех методов.
+     * Источники: профиль split-tunnel (шторка/пресет), глобальный direct-список, списки «в туннель».
+     * Android не позволяет одновременно addAllowedApplication и addDisallowedApplication,
+     * поэтому отдаём ровно один ключ. Глобальный direct-список приоритетнее allowlist.
      */
     private fun applySplitTunnel(config: String): String {
-        val injectionOrNull = splitManager.buildInjection(this.currentProfileId.ifBlank { "default" })
-        val injection = injectionOrNull ?: return config
+        val profileId = currentProfileId.ifBlank { "default" }
+        val cfg = splitManager.resolve(profileId)
+        val own = "svoboda.runet.abonent0007"
+        val pm = appContext.packageManager
+        fun installed(pkg: String) = runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
+
+        val direct = LinkedHashSet<String>()
+        if (cfg.mode == SplitTunnelMode.ALL_EXCEPT_SELECTED) direct += cfg.packageNames
+        direct += prefs.globalDirectApps
+
+        val allow = LinkedHashSet<String>()
+        if (cfg.mode == SplitTunnelMode.ONLY_SELECTED) allow += cfg.packageNames
+        allow += prefs.dpiTunnelApps
+        allow += prefs.warpTunnelApps
+
+        allow -= direct
+        allow -= own
+        direct -= own
+
+        val line = when {
+            allow.any { installed(it) } ->
+                "IncludedApplications = " + allow.filter { installed(it) }.joinToString(", ")
+            direct.any { installed(it) } ->
+                "ExcludedApplications = " + direct.filter { installed(it) }.joinToString(", ")
+            else -> null
+        } ?: return config
+
         val lines = config.lines().toMutableList()
         val ifaceIndex = lines.indexOfFirst { it.trim().equals("[Interface]", ignoreCase = true) }
         if (ifaceIndex < 0) return config
-        lines.add(ifaceIndex + 1, injection)
-        android.util.Log.d("SvobodaVpn", "split tunnel: $injection")
+        lines.add(ifaceIndex + 1, line)
+        android.util.Log.d("SvobodaVpn", "split tunnel: $line")
         return lines.joinToString("\n")
     }
 }

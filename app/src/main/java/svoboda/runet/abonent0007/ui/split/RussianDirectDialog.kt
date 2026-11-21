@@ -79,12 +79,10 @@ fun RussianDirectDialog(
         }
     }
 
-    val initial = remember(profileId) {
-        AppGraph.splitManager.resolve(profileId).packageNames
-    }
+    // Глобальный direct-список (один на все методы).
+    val initial = remember { AppGraph.prefs.globalDirectApps }
 
-    // Нормализуем по установленным пакетам и привязываем состояние к профилю.
-    var enabled by remember(profileId) {
+    var enabled by remember {
         mutableStateOf(
             initial.intersect(RussianDirectCatalog.allPackages)
                 .intersect(installed.keys)
@@ -200,17 +198,11 @@ fun RussianDirectDialog(
                     shape = RoundedCornerShape(14.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, GoodGreen),
                     onClick = {
-                        val current = AppGraph.splitManager.resolve(profileId)
-                        // Сохраняем пакеты, которые пользователь исключил ранее,
-                        // но которых нет в каталоге.
-                        val preserved = current.packageNames - RussianDirectCatalog.allPackages
+                        // Глобальный direct-список (один на все методы). Сохраняем пакеты,
+                        // которые пользователь исключил ранее, но которых нет в каталоге.
+                        val preserved = AppGraph.prefs.globalDirectApps - RussianDirectCatalog.allPackages
                         val packageNames = preserved + enabled
-                        val cfg = current.copy(
-                            mode = if (packageNames.isEmpty()) SplitTunnelMode.ALL else SplitTunnelMode.ALL_EXCEPT_SELECTED,
-                            packageNames = packageNames,
-                            presetId = "russian_direct",
-                        )
-                        AppGraph.splitManager.update(profileId, cfg)
+                        AppGraph.prefs.globalDirectApps = packageNames
                         if (AppGraph.vpn.isConnected) {
                             // Не используем scope диалога (он умирает при закрытии).
                             AppGraph.appScope.launch { AppGraph.reconnect.userConnect(false) }

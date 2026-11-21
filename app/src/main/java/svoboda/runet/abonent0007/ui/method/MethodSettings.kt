@@ -384,7 +384,7 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
 
     // 4. В туннель — per-app allowlist (поиск + все приложения + галки).
     var tunnelApps by remember { mutableStateOf(AppGraph.prefs.warpTunnelApps) }
-    var directApps by remember { mutableStateOf(AppGraph.prefs.warpDirectApps) }
+    var directApps by remember { mutableStateOf(AppGraph.prefs.globalDirectApps) }
     AppScopeTile(
         title = "В ТУННЕЛЬ (WARP)",
         subtitle = "только выбранные приложения идут через VPN",
@@ -395,7 +395,7 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
             tunnelApps = next
             directApps = directApps - next
             AppGraph.prefs.warpTunnelApps = next
-            AppGraph.prefs.warpDirectApps = directApps
+            AppGraph.prefs.globalDirectApps = directApps
         },
     )
 
@@ -413,17 +413,17 @@ private fun WarpSettings(mtu: Int, onMtu: (Int) -> Unit) {
         onApply = { dnsValue = it },
     )
 
-    // 6. Напрямую — per-app denylist.
+    // 6. Напрямую — per-app denylist (глобальный, один на все методы).
     AppScopeTile(
-        title = "НАПРЯМУЮ (WARP)",
-        subtitle = "выбранные приложения идут мимо VPN",
+        title = "НАПРЯМУЮ (глобально)",
+        subtitle = "выбранные приложения идут мимо VPN во всех методах",
         selected = directApps,
         disabled = tunnelApps,
         onApply = { sel ->
             val next = sel - tunnelApps
             directApps = next
             tunnelApps = tunnelApps - next
-            AppGraph.prefs.warpDirectApps = next
+            AppGraph.prefs.globalDirectApps = next
             AppGraph.prefs.warpTunnelApps = tunnelApps
         },
     )

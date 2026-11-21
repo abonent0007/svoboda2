@@ -145,8 +145,7 @@ class DpiEngine(
         }
 
         // 2. TUN через GoBackend в DPI-режиме (handoff fd → HEV внутри VpnController/GoBackend)
-        val split = splitManager.resolve(vpn.currentProfileId.ifBlank { "warp" })
-        val config = DpiConfig.build(prefs, split, includedApps = prefs.dpiTunnelApps)
+        val config = DpiConfig.build(prefs)
         val ok = vpn.connectDpi(config)
         if (!ok) {
             Log.e(TAG, "DPI engine: TUN bring-up failed")
