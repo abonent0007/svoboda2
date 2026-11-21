@@ -570,6 +570,15 @@ class ConnectionManager(
                         }
                         if (allowed.isEmpty()) logAuto("публичные: согласия нет или страна не свежая (>7 дней)")
                     }
+                    // Последний удачный WARP-конфиг — самый надёжный кандидат: он уже прошёл
+                    // проверку раньше. Без него AUTO при недоступном Cloudflare API терял WARP,
+                    // хотя рабочий конфиг есть (connectWarpWithGeneration не проверяет bootstrap).
+                    lastGoodConfig?.let { cfg ->
+                        candidates += AutoCandidate(
+                            "warp:lastgood",
+                            { attempt("warp:lastgood", "WARP · последний рабочий") { controller.currentProfileId = "warp"; controller.connect(cfg) } },
+                        )
+                    }
                     candidates += AutoCandidate("warp:generated", { connectWarpWithGeneration() })
                 }
                 "DPI" -> {
@@ -591,7 +600,6 @@ class ConnectionManager(
         }
 
         cycle.beginCycle()
-        var dpiFallback = false
         for ((i, candidate) in candidates.withIndex()) {
             if (!intentCheck()) {
                 // Пользователь нажал ОТКЛЮЧИТЬ во время перебора: ни одной новой попытки туннеля.
@@ -610,18 +618,13 @@ class ConnectionManager(
                     logAuto("candidate #${i + 1} selected: ${controller.currentProfileId}")
                     val isDpi = controller.currentProfileId == "dpi"
                     if (isDpi && prefs.autoTelegramViaVpn) {
-                        // Telegram-приложение ходит к IP-адресам DC: DPI-стратегии их не открывают.
-                        // Если DC недоступны — ищем транспорт AWG/WARP, и только потом откатываемся на DPI.
+                        // Telegram DC (149.154.x/91.108.x) заблокированы на IP-уровне — DPI их не открывает.
+                        // Но data-plane подтверждён: по решению пользователя (DPI_FALLBACK_DECISION, сценарий B)
+                        // интернет-маршрут НЕ роняем из-за Telegram — фиксируем ограничение и оставляем DPI.
                         val dc = TelegramDc.check(viaSocks = true, socksPort = prefs.dpiSocksPort)
                         if (!dc.reachable) {
-                            logAuto("Telegram DC over DPI down (${dc.error ?: "no answer"}) -> AWG/WARP")
-                            autoStatus = "Telegram DC недоступны через DPI (${dc.error ?: "нет ответа"}) — ищем AWG/WARP"
-                            if (!dpiFallback) {
-                                dpiFallback = true
-                                // НЕ quarantine: DC-флап — не причина банить DPI на 10 минут.
-                                runCatching { controller.disconnect() }
-                                continue
-                            }
+                            logAuto("Telegram DC over DPI down (${dc.error ?: "no answer"}) — оставляем DPI (интернет есть, Telegram ограничен)")
+                            autoStatus = "Telegram DC недоступны через DPI (${dc.error ?: "нет ответа"}) — интернет работает"
                         } else {
                             logAuto("Telegram DC reachable")
                             autoStatus = "Telegram DC доступны"
@@ -647,9 +650,6 @@ class ConnectionManager(
                     cycle.recordFailure(candidate.id, "transport fail")
                 }
             }
-        }
-        if (dpiFallback) {
-            autoStatus = "Telegram DC недоступны: подключён DPI (AWG/WARP не найден)"
         }
         val reasons = cycle.failures()
         // Все кандидаты недоступны (внутри цикла и из-за quarantine), независимо от того,
