@@ -48,3 +48,13 @@ gradlew.bat :app:cleanTestDebugUnitTest :app:testDebugUnitTest
 gradlew.bat :app:assembleDebug
 python tools/net_scan.py
 ```
+
+## Дополнение 2026-11-21 (hardening-2026-11-19, коммит 541876b)
+
+- **Health и «Проверить связь» теперь честные**: проба привязана к VPN-сети (`NetProbe.fetchExitBound` / `tcpPingBound` через `Network.socketFactory`), т.е. идёт через TUN. Раньше не-DPI проба шла напрямую из приложения (оно исключено из VPN) и могла показывать «здорово» при мёртвом туннеле. DPI по-прежнему проверяется через локальный SOCKS (он и есть туннель).
+- **«Пресет: Российские приложения»** — больше не перезаписывает список молча: диалог с числом добавляемых/удаляемых пакетов, действия «Объединить» / «Заменить», и кнопка «Отменить пресет» после применения.
+- **ActionChip** — единая кнопка с контуром/выделением; заменены «голые» `TextButton` в настройках методов (WARP/DPI/AUTO), `ServiceScopePicker`, `DnsResolverPicker`.
+- **Автообновление** по умолчанию ВЫКЛ, пока репозиторий приватный (releases/latest недоступен).
+- Удалены мёртвые prefs (`autoPreferWarp`, `autoFallback`, `dpiCustomStrategyPrev`) и мёртвые параметры (`DpiConfig.serviceScope`, `WarpProfileFactory.serviceScope`).
+- Исходник релиза зафиксирован: `541876b` (ветка `hardening-2026-11-19`). Пересборка от этого коммита: `app-universal-release.apk` SHA-256 `b5ff922d…`, `app-arm64-v8a-release.apk` `5030b1f4…`, `app-armeabi-v7a-release.apk` `f95e6215…`.
+- Консультация  council (duck gpt-oss 120B + Claude Haiku): подтверждено, что allow/deny в одном `VpnService.Builder` взаимоисключаемы (effective-set считаем в приложении, передаём один режим) и что health-проба обязана идти через TUN.
