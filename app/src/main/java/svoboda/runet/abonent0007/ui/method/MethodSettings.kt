@@ -160,12 +160,19 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun AwgSettings(mtu: Int, onMtu: (Int) -> Unit, onOpenServers: () -> Unit) {
     var showGenerator by remember { mutableStateOf(false) }
+    var showAutoGenerator by remember { mutableStateOf(false) }
     SectionTitle("СЕРВЕРЫ")
     TileRow(
         title = "Мои серверы AmneziaWG",
         value = "выбрать существующий или импортировать",
         opaque = true,
         onClick = onOpenServers,
+    )
+    TileRow(
+        title = "Автогенерация AWG",
+        value = "страна + 3 предустановки маскировки",
+        opaque = true,
+        onClick = { showAutoGenerator = true },
     )
     TileRow(
         title = "Генератор AWG-конфига",
@@ -178,6 +185,9 @@ private fun AwgSettings(mtu: Int, onMtu: (Int) -> Unit, onOpenServers: () -> Uni
 
     if (showGenerator) {
         AwgGeneratorDialog(onDismiss = { showGenerator = false })
+    }
+    if (showAutoGenerator) {
+        svoboda.runet.abonent0007.ui.awg.AwgGeneratorDialog(onDismiss = { showAutoGenerator = false })
     }
 }
 

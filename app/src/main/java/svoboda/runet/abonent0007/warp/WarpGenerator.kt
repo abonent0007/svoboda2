@@ -117,7 +117,7 @@ object WarpGenerator {
      * Берёт WARP-identity с relay `obnova-warp` (затем mirror).
      * Приватный ключ выдаёт сам relay — отдельная пара ключей не нужна.
      */
-    private suspend fun fetchIdentity(): WarpIdentity? = withContext(Dispatchers.IO) {
+    suspend fun fetchIdentity(): WarpIdentity? = withContext(Dispatchers.IO) {
         for (base in listOf(RELAY_URL) + MIRRORS) {
             val r = runCatching {
                 val req = Request.Builder().url(base.trimEnd('/') + "/")
