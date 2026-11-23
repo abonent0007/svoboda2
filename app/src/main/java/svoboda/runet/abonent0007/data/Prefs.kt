@@ -23,6 +23,16 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("auto_connect", true)
         set(value) = prefs.edit().putBoolean("auto_connect", value).apply()
 
+    /**
+     * Восстанавливать соединение после перезапуска процесса/устройства.
+     * true — при пользовательском подключении, false — при явном отключении.
+     * Нужно, потому что система (Oplus/Realme freezer) выгружает приложение из фона
+     * и рвёт VPN; при следующем запуске процесса соединение должно вернуться.
+     */
+    var shouldReconnect: Boolean
+        get() = prefs.getBoolean("should_reconnect", false)
+        set(value) = prefs.edit().putBoolean("should_reconnect", value).apply()
+
     /** MTU туннеля (1200..1480), по умолчанию 1440 (рабочая конфигурация). */
     var tunnelMtu: Int
         get() = prefs.getInt("tunnel_mtu", 1440).coerceIn(1_200, 1_480)

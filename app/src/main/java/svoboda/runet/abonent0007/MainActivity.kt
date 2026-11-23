@@ -27,7 +27,6 @@ import svoboda.runet.abonent0007.net.NetProbe
 import svoboda.runet.abonent0007.net.Updater
 import svoboda.runet.abonent0007.own.OwnServer
 import svoboda.runet.abonent0007.ui.home.HomeScreen
-import svoboda.runet.abonent0007.ui.method.YouTubeStrategyDialog
 import svoboda.runet.abonent0007.ui.own.AddServerDialog
 import svoboda.runet.abonent0007.ui.own.ServerListDialog
 import svoboda.runet.abonent0007.ui.split.AppPickerDialog
@@ -60,8 +59,7 @@ class MainActivity : ComponentActivity() {
             var showServers by remember { mutableStateOf(false) }
             var showAddServer by remember { mutableStateOf(false) }
             var updateMessage by remember { mutableStateOf<String?>(null) }
-            var showYtPrompt by remember { mutableStateOf(true) }
-            var showYtPicker by remember { mutableStateOf(false) }
+            var showMtuPrompt by remember { mutableStateOf(true) }
 
             fun doConnect(scope: CoroutineScope) {
                 // Выбранный на главном экране способ подключения:
@@ -94,6 +92,22 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 if (controller.prepareVpn(this@MainActivity) == null) {
                     reconnect.userConnect(false)
+                }
+            }
+
+            // Исключение из оптимизации батареи: Oplus/Realme «замораживает» приложение в фоне
+            // и рвёт VPN. Без исключения соединение не живёт.
+            LaunchedEffect(Unit) {
+                val pm = getSystemService(android.os.PowerManager::class.java) ?: return@LaunchedEffect
+                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                    runCatching {
+                        startActivity(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                android.net.Uri.parse("package:$packageName"),
+                            ),
+                        )
+                    }
                 }
             }
 
@@ -166,33 +180,45 @@ class MainActivity : ComponentActivity() {
                     },
                 )
 
-                if (showYtPrompt) {
+                if (showMtuPrompt) {
+                    var mtu by remember { mutableStateOf(AppGraph.prefs.tunnelMtu) }
                     AlertDialog(
-                        onDismissRequest = { showYtPrompt = false },
-                        title = { Text("Улучшить работу YouTube?") },
+                        onDismissRequest = { showMtuPrompt = false },
+                        title = { Text("MTU — гибкость против блокировок") },
                         text = {
                             Text(
-                                "Подбор стратегии DPI под YouTube / Google-видео: перебор ~43 стратегий, " +
-                                    "обычно до нескольких минут. Если DPI сейчас подключён, подбор лучше запустить " +
-                                    "после отключения. Это можно сделать и позже: Настройки → DPI → " +
-                                    "«Подобрать стратегию для YouTube».",
+                                "MTU (Maximum Transmission Unit) — размер одного IP-пакета.\n\n" +
+                                    "Смена MTU меняет паттерн и шаблон пакетов: приложения становятся гибче " +
+                                    "к блокировкам, а повторяющийся шаблон пакетов не отслеживается.\n\n" +
+                                    "Текущее значение: $mtu. Кнопки меняют MTU глобально во всём приложении " +
+                                    "(шаг 1, диапазон 1200–1480).",
                                 color = androidx.compose.ui.graphics.Color(0xFF9FB0C2),
                                 fontSize = 12.sp,
                             )
                         },
                         confirmButton = {
                             TextButton(onClick = {
-                                showYtPrompt = false
-                                showYtPicker = true
-                            }) { Text("ПОДОБРАТЬ") }
+                                val next = (mtu + 1).coerceIn(1200, 1480)
+                                mtu = next
+                                AppGraph.prefs.tunnelMtu = next
+                                showMtuPrompt = false
+                                if (AppGraph.vpn.isConnected) {
+                                    scope.launch { AppGraph.reconnect.userConnect(false) }
+                                }
+                            }) { Text("MTU + 1") }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showYtPrompt = false }) { Text("ПОЗЖЕ") }
+                            TextButton(onClick = {
+                                val next = (mtu - 1).coerceIn(1200, 1480)
+                                mtu = next
+                                AppGraph.prefs.tunnelMtu = next
+                                showMtuPrompt = false
+                                if (AppGraph.vpn.isConnected) {
+                                    scope.launch { AppGraph.reconnect.userConnect(false) }
+                                }
+                            }) { Text("MTU − 1") }
                         },
                     )
-                }
-                if (showYtPicker) {
-                    YouTubeStrategyDialog(onDismiss = { showYtPicker = false })
                 }
 
                 if (showServers) {

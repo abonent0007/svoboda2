@@ -100,5 +100,9 @@ class SvobodaApp : Application() {
         )
         AppGraph.reconnect.startNetworkMonitoring()
         AppGraph.vpn.startMonitor(AppGraph.appScope)
+        // Восстановление VPN после перезапуска процесса (система выгрузила приложение из фона).
+        if (AppGraph.prefs.shouldReconnect && AppGraph.prefs.autoConnect) {
+            AppGraph.appScope.launch { AppGraph.manager.autoConnectOnce() }
+        }
     }
 }

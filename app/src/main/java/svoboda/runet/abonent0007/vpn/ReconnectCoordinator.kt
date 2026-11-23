@@ -163,6 +163,7 @@ class ReconnectCoordinator(
     suspend fun userConnect(manual: Boolean) = mutex.withLock {
         intent.sessionId++
         intent.shouldBeConnected = true
+        prefs.shouldReconnect = true
         val currentSession = intent.sessionId
         cancelReconnect()
         cancelHealth()
@@ -228,6 +229,7 @@ class ReconnectCoordinator(
     suspend fun userDisconnect() = mutex.withLock {
         intent.sessionId++
         intent.shouldBeConnected = false
+        prefs.shouldReconnect = false
         cancelReconnect()
         cancelHealth()
         disconnectAction()
