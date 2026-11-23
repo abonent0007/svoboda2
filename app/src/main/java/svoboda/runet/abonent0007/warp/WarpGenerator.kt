@@ -23,6 +23,13 @@ import java.util.concurrent.TimeUnit
 object WarpGenerator {
 
     const val REG_URL = "https://api.cloudflareclient.com/v0a2158/reg"
+
+    /**
+     * Пользовательский relay `obnova-warp` (Cloudflare Worker): обходит SNI-блок и сам
+     * проходит mirror-эндпоинты генератора, кешируя ответ на минуту.
+     * `GET /` → {privKey, peer_pub, client_ipv4, client_ipv6}; `/health` → живость.
+     */
+    const val RELAY_URL = "https://obnova-warp.yurentiy-avd.workers.dev"
     /**
      * @deprecated Используйте [svoboda.runet.abonent0007.config.RemoteConfig.cfClientVersion]
      * (remote API + дисковый кэш + этот же embedded fallback). Константа оставлена как
@@ -97,7 +104,59 @@ object WarpGenerator {
         })
         .build()
 
-    /** Регистрирует новую WARP-идентичность. Возвращает null при любой ошибке. */    suspend fun register(installId: String = ""): WarpIdentity? = withContext(Dispatchers.IO) {
+    /** Публичные mirror-эндпоинты генератора (запас, если relay недоступен/429). */
+    private val MIRRORS = listOf(
+        "https://warp-vercel-murex.warp-api.cfd",
+        "https://warp-netlify.warp-api.cfd",
+        "https://warp-workers.warp-api.cfd",
+        "https://warp-sub.warp-api.cfd",
+        "https://warp-vercel-chi.warp-api.cfd",
+    )
+
+    /**
+     * Берёт WARP-identity с relay `obnova-warp` (затем mirror).
+     * Приватный ключ выдаёт сам relay — отдельная пара ключей не нужна.
+     */
+    private suspend fun fetchIdentity(): WarpIdentity? = withContext(Dispatchers.IO) {
+        for (base in listOf(RELAY_URL) + MIRRORS) {
+            val r = runCatching {
+                val req = Request.Builder().url(base.trimEnd('/') + "/")
+                    .header("X-Client", "WARP")
+                    .header("User-Agent", "Svoboda2-Android")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@runCatching null
+                    val json = JSONObject(resp.body?.string().orEmpty())
+                    val priv = json.optString("privKey")
+                    val peer = json.optString("peer_pub")
+                    val v4 = json.optString("client_ipv4")
+                    val v6 = json.optString("client_ipv6")
+                    if (priv.isBlank() || peer.isBlank() || v4.isBlank()) null
+                    else WarpIdentity(
+                        privateKey = priv,
+                        publicKey = "",
+                        ipv4 = v4,
+                        ipv6 = v6,
+                        peerPublicKey = peer,
+                        reserved = "",
+                        deviceId = "",
+                        token = "",
+                    )
+                }
+            }.getOrNull()
+            if (r != null) return@withContext r
+        }
+        null
+    }
+
+    /** Регистрирует WARP-идентичность: relay → mirror → прямой API. null при ошибке. */
+    suspend fun register(installId: String = ""): WarpIdentity? {
+        fetchIdentity()?.let { return it }
+        return registerDirect(installId)
+    }
+
+    /** Прямая регистрация в Cloudflare (запасной путь, вне РФ). */
+    private suspend fun registerDirect(installId: String): WarpIdentity? = withContext(Dispatchers.IO) {
         runCatching {
             val keyPair = KeyPair()
             val publicKey = keyPair.publicKey.toBase64()
