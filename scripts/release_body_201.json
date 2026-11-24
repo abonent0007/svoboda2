@@ -1,8 +1,0 @@
-{
-  "tag_name": "v2.0.1",
-  "target_commitish": "main",
-  "name": "Свобода 2.0 — v2.0.1",
-  "body": "**Что нового**\n- Автообновление: проверка GitHub Releases при запуске, скачивание APK и передача системному установщику\n- Числовое сравнение версий (2.0.10 > 2.0.9), откат не предлагается\n- MTU по умолчанию 1420, слайдер до 1480, пресеты 1380–1480\n- «Способ подключения» перенесён вниз, кнопки «Подключить» и «Проверить связь» в одну линию\n- Исправления: backoff ограничен 60 с, убран «-1 мс», статус реконнекта очищается при успехе, авто-реконнект перерегистрирует WARP\n\n![Главный экран](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_main.png)\n\n![MTU](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_mtu.png)",
-  "draft": false,
-  "prerelease": true
-}

@@ -1,8 +1,0 @@
-{
-  "tag_name": "v2.0.0",
-  "target_commitish": "main",
-  "name": "Свобода 2.0 — v2.0.0",
-  "body": "Первый публичный релиз.\n\n**Возможности**\n- AmneziaWG и WARP (генерация через Cloudflare API), 74 seed-профиля\n- Keystore AES-256-GCM, fingerprint и история профилей\n- Split-tunnel: ALL / ONLY_SELECTED / ALL_EXCEPT_SELECTED + пресеты\n- DNS/IPv6 per-profile, MTU 1200–1480 (по умолчанию 1420) с пресетами\n- ReconnectCoordinator, health-check, HTTPS-proof перед CONNECTED\n- Android lifecycle: onRevoke, Always-on, Foreground Service\n- Автообновление с GitHub Releases (проверка при запуске)\n\n**Скриншоты**\n\n![Главный экран](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_main.png)\n\n![Меню](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_drawer.png)\n\n![MTU](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_mtu.png)\n\n**Сборка**: debug-подпись, для тестирования.\n\n**DPI**: движок в разработке (см. docs/DPI_STATUS.md).",
-  "draft": false,
-  "prerelease": true
-}

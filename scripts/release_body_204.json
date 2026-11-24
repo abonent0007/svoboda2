@@ -1,8 +1,0 @@
-{
-  "tag_name": "v2.0.4",
-  "target_commitish": "main",
-  "name": "Свобода 2.0 — v2.0.4",
-  "body": "**Исправления по результатам тестов на устройстве**\n- Подменю «Российские приложения — напрямую»: переключатели теперь реально обновляют состояние (Compose не видел мутацию MutableSet) — 4/4 банков, 7/7 гос., 9/9 веб применяются и сохраняются\n- Переподключение после «Применить» запускается из appScope, а не из scope диалога (больше нет LeftCompositionCancellationException и ложной ошибки)\n- Конфигурация split-tunnel `russian_direct` применяется (`ExcludedApplications`) и сохраняется\n\n**Проверено на Realme RMX3370 (Android 13)**\n- FGS: isForeground=true, канал svoboda_vpn, mFgServiceShown=true\n- Подменю: AWG (генератор .conf + MTU с пресетами), WARP (перерегистрация endpoint 8.47.69.0:854), DPI (13 стратегий + генератор), AUTO\n- VPN: handshake, HTTPS-proof, ping ~33 мс\n\n![Главный экран](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_main.png)\n\n![Российские приложения](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_russian_direct.png)",
-  "draft": false,
-  "prerelease": false
-}

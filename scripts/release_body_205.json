@@ -1,8 +1,0 @@
-{
-  "tag_name": "v2.0.5",
-  "target_commitish": "main",
-  "name": "Свобода 2.0 — v2.0.5",
-  "body": "**Code Review (GPT) — все замечания исправлены**\n- **[High]** Package Visibility: в манифест добавлены `<queries><package>` для всех пакетов каталога (targetSdk 35, Android 11+)\n- **[Medium]** При «Применить» сохраняются пакеты, ранее исключённые вами, но не входящие в каталог (не теряются пользовательские настройки)\n- **[Medium]** Состояние выбора привязано к `profileId` (`remember(profileId)`)\n- **[Medium]** Предустановленные приложения больше не скрываются фильтром SYSTEM\n- **[Medium]** Выбор нормализуется по реально установленным пакетам (удалённые не попадают в VPN)\n- **[Medium]** Категория «Веб-ресурсы» переименована в «Российские сервисы и приложения» (ExcludedApplications исключает приложения целиком)\n- **[Low]** Переключатель категории скрыт, если приложений не установлено\n\n![Главный экран](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_main.png)\n\n![Российские приложения](https://raw.githubusercontent.com/abonent0007/svoboda2/main/docs/shots/release_russian_direct.png)",
-  "draft": false,
-  "prerelease": false
-}

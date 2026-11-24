@@ -1,2 +1,0 @@
-$env:CHATGPT_NO_REASONING = '1'
-python C:\lib\chatgpt-ai.py chat --session svoboda2 "Answer short, one line each: 1) AUTO log UI in 2.0.7 or 2.0.8? 2) Apply 7-day country freshness to generated WARP profiles too? 3) Realme sideload: debug-APK via adb is the only working path, or a normal signing path exists? 4) Minimal green-smoke criterion for 2.0.7: a) 4 modes crash-free, b) public NL/FI/US respond, c) AUTO picks AWG/WARP, d) all of these?" 2>&1
