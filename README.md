@@ -4,7 +4,7 @@ Android-клиент для доступа в интернет без root и б
 Три независимых транспорта — **AmneziaWG**, **Cloudflare WARP**, **DPI-обход** — плюс
 **AUTO**: автоматический выбор работающего канала с проверкой, что интернет реально идёт.
 
-`svoboda.runet.abonent0007` · minSdk 26 · targetSdk 35 · arm64-v8a + armeabi-v7a · версия 2.0.9
+`svoboda.runet.abonent0007` · minSdk 26 · targetSdk 35 · arm64-v8a + armeabi-v7a · версия 2.3.1
 
 ---
 
@@ -77,15 +77,13 @@ per-app split-tunnel.
 
 | Главный экран | Меню |
 |---|---|
-| <img src="docs/shots/release_main.png" width="270" alt="Главный экран" /> | <img src="docs/shots/release_drawer.png" width="270" alt="Меню" /> |
+| <img src="docs/shots/v231_main.png" width="270" alt="Главный экран" /> | <img src="docs/shots/v231_drawer.png" width="270" alt="Меню" /> |
 
-| Настройки WARP | Настройки DPI |
+| Приложения (VPN/напрямую) | Статистика и ночной режим |
 |---|---|
-| <img src="docs/shots/release_warp_settings.png" width="270" alt="Настройки WARP" /> | <img src="docs/shots/release_dpi_settings.png" width="270" alt="Настройки DPI" /> |
+| <img src="docs/shots/v231_apps.png" width="270" alt="Приложения" /> | <img src="docs/shots/v231_stats.png" width="270" alt="Статистика" /> |
 
-Разработчик и поддержка проекта:
-
-<img src="docs/shots/release_about.png" width="270" alt="О приложении" />
+Разработчик и поддержка проекта — в приложении: «ПРОЧЕЕ» → «О приложении».
 
 ## Диагностика
 
@@ -109,4 +107,4 @@ gradlew.bat assembleDebug --console=plain --no-daemon
 
 ## Статус
 
-Текущая версия — **2.0.9** (versionCode 209). Релизы публикуются на GitHub.
+Текущая версия — **2.3.1** (versionCode 241). Релизы публикуются на GitHub.
